@@ -16,6 +16,7 @@ export function createEditorShell(root) {
   const seedDebugButton = root.querySelector("[data-editor-action='plan-seed-debug']");
   const toolNavigateButton = root.querySelector("[data-editor-action='tool-navigate']");
   const toolDrawRectButton = root.querySelector("[data-editor-action='tool-draw-rect']");
+  const toolCalibrateScaleButton = root.querySelector("[data-editor-action='tool-calibrate-scale']");
   const deleteSelectedButton = root.querySelector("[data-editor-action='rect-delete']");
   const backgroundOpacityDownButton = root.querySelector("[data-editor-action='bg-opacity-down']");
   const backgroundOpacityUpButton = root.querySelector("[data-editor-action='bg-opacity-up']");
@@ -26,6 +27,7 @@ export function createEditorShell(root) {
   const backgroundScaleDownButton = root.querySelector("[data-editor-action='bg-scale-down']");
   const backgroundScaleUpButton = root.querySelector("[data-editor-action='bg-scale-up']");
   const backgroundStatusElement = root.querySelector("[data-background-status]");
+  const scaleStatusElement = root.querySelector("[data-scale-status]");
 
   if (!canvas || !shellElement) return;
 
@@ -40,6 +42,7 @@ export function createEditorShell(root) {
       seedDebugButton,
       toolNavigateButton,
       toolDrawRectButton,
+      toolCalibrateScaleButton,
       deleteSelectedButton,
       backgroundOpacityDownButton,
       backgroundOpacityUpButton,
@@ -49,7 +52,8 @@ export function createEditorShell(root) {
       backgroundMoveDownButton,
       backgroundScaleDownButton,
       backgroundScaleUpButton,
-      backgroundStatusElement
+      backgroundStatusElement,
+      scaleStatusElement
     }
   });
 }
@@ -64,7 +68,7 @@ function buildShell() {
         <h1>Apartment Planner MVP</h1>
       </div>
       <p>
-        T-0008 adds basic snapping for rectangle drag/resize (edge/corner alignment), while keeping background controls collapsible.
+        T-0009 adds scale calibration: draw a reference line, enter the real-world length in meters, and persist the plan scale.
       </p>
       <div class="meta-row" aria-label="Sprint metadata">
         <div class="pill">
@@ -73,20 +77,22 @@ function buildShell() {
         </div>
         <div class="pill">
           <strong>Ticket</strong>
-          T-0008
+          T-0009
         </div>
       </div>
       <ol class="checklist" aria-label="Immediate next steps">
-        <li>This ticket: snap drag/resize to nearby rectangle edges/corners.</li>
-        <li>Delete selected rectangle is also available for tracing mistakes.</li>
-        <li>Next: scale calibration (stretch) unless queue changes.</li>
+        <li>This ticket: calibrate scale from a two-point reference line.</li>
+        <li>Current scale should be visible and persisted in the saved plan.</li>
+        <li>Existing tracing interactions (draw, resize, snap, delete) must keep working.</li>
       </ol>
     </aside>
     <section class="panel editor-frame" aria-label="Editor">
       <div class="toolbar" role="toolbar" aria-label="Editor toolbar">
         <button type="button" data-editor-action="tool-navigate" aria-pressed="true">Navigate</button>
         <button type="button" data-editor-action="tool-draw-rect" aria-pressed="false">Draw Rect</button>
+        <button type="button" data-editor-action="tool-calibrate-scale" aria-pressed="false">Calibrate Scale</button>
         <button type="button" data-editor-action="rect-delete" disabled>Delete Rect</button>
+        <span class="toolbar-inline-status" data-scale-status>Scale not calibrated</span>
         <details class="toolbar-disclosure bg-controls">
           <summary>
             <span class="toolbar-label">BG Controls</span>

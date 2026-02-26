@@ -168,3 +168,39 @@ This ticket intentionally excludes rotation/warping/upload UI.
    - pan, background controls, delete-selected, autosave/reload
 
 This ticket does not add magnetic links/unlink persistence.
+
+## T-0011 manual test-harness check (pure unit tests in browser)
+
+1. Start the server and open `http://127.0.0.1:4173/tests/`.
+2. Confirm the page loads a test summary and a list of test cases.
+3. Confirm the summary shows `PASS` (all tests green).
+4. If any test fails:
+   - copy the failing test name / stack from the page
+   - report it before continuing feature work
+
+This harness is dependency-free and runs in the browser because local Node is currently broken on this machine (`icu4c` mismatch).
+
+## T-0009 manual smoke check (scale calibration: reference line -> meters)
+
+1. Start the server and open `http://127.0.0.1:4173`.
+2. Confirm the sidebar says `T-0009` and the toolbar shows `Calibrate Scale`.
+3. Click `Calibrate Scale`, then drag a visible reference line on the canvas:
+   - a dashed orange draft line appears during drag
+   - line length in world units is shown near the draft line
+4. Release the pointer:
+   - a prompt asks for the real-world length in meters
+   - enter a positive number (for example `3.2`)
+5. Confirm the app shows a scale readout:
+   - toolbar inline scale status updates
+   - status/overlay mentions the calibrated scale
+   - an orange dashed reference line remains visible on the canvas
+6. Recalibrate with a different line and/or meters value:
+   - previous scale is replaced cleanly
+   - readouts update to the new calibration
+7. Reload the page after autosave:
+   - scale readout and reference line reopen from saved plan
+8. Confirm existing interactions still work:
+   - navigate pan/zoom
+   - draw/create/resize rectangles
+   - snapping
+   - delete rectangle

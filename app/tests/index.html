@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Apartment Planner MVP - Unit Tests</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        padding: 20px;
+        font: 14px/1.4 Georgia, serif;
+        background: #f5f4ef;
+        color: #1f1f1f;
+      }
+
+      .panel {
+        max-width: 920px;
+        margin: 0 auto;
+        background: #fff;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .panel header {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        background: linear-gradient(180deg, #fbfaf6, #f4f1e7);
+      }
+
+      .panel main {
+        padding: 18px 20px;
+      }
+
+      .summary {
+        margin: 0 0 14px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #f3f3f3;
+      }
+
+      .summary.pass {
+        background: rgba(11, 110, 79, 0.10);
+        color: #0b6e4f;
+      }
+
+      .summary.fail {
+        background: rgba(180, 32, 32, 0.10);
+        color: #8d1f1f;
+      }
+
+      ul.results {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      ul.results li {
+        border-top: 1px solid rgba(0, 0, 0, 0.06);
+        padding: 10px 0;
+      }
+
+      .pass-label {
+        color: #0b6e4f;
+      }
+
+      .fail-label {
+        color: #8d1f1f;
+      }
+
+      code {
+        background: #f5f5f5;
+        padding: 1px 4px;
+        border-radius: 4px;
+      }
+
+      pre {
+        background: #f8f8f8;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        padding: 10px;
+        border-radius: 8px;
+        overflow: auto;
+        margin: 8px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="panel" aria-label="Unit test results">
+      <header>
+        <h1 style="margin: 0; font-size: 22px;">Apartment Planner MVP - Unit Tests</h1>
+        <p style="margin: 6px 0 0;">Pure geometry + reducer tests (`T-0011`) running directly in the browser via ES modules.</p>
+      </header>
+      <main>
+        <div id="summary" class="summary">Running tests...</div>
+        <ul id="results" class="results"></ul>
+      </main>
+    </section>
+    <script type="module" src="./index.js"></script>
+  </body>
+  </html>

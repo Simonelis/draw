@@ -1,0 +1,51 @@
+import { createEmptyPlan, planReducer } from "../../src/editor/state/plan.js";
+import { assert, assertDeepEqual, assertEqual, test } from "../test-runner.js";
+
+test("plan reducer delete is a no-op when rectangle id is missing", () => {
+  const plan = createEmptyPlan();
+  const nextPlan = planReducer(plan, {
+    type: "plan/rectangles/delete",
+    rectangleId: "rect_missing"
+  });
+
+  assert(nextPlan === plan, "Missing delete should return the same plan object.");
+});
+
+test("plan reducer delete removes rectangle and cleans rooms/openings references", () => {
+  const base = createEmptyPlan();
+  const plan = {
+    ...base,
+    entities: {
+      rectangles: [
+        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 100, h: 100, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: "room_keep", label: null },
+        { id: "rect_b", kind: "roomRect", x: 120, y: 0, w: 80, h: 100, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: "room_keep", label: null }
+      ],
+      openings: [
+        { id: "open_1", host: { rectangleId: "rect_a", edge: "right" } },
+        { id: "open_2", host: { rectangleId: "rect_b", edge: "left" } }
+      ],
+      rooms: [
+        { id: "room_keep", name: "Living", roomType: "living_room", rectangleIds: ["rect_a", "rect_b"] },
+        { id: "room_drop", name: "Closet", roomType: "closet", rectangleIds: ["rect_a"] }
+      ]
+    }
+  };
+
+  const nextPlan = planReducer(plan, {
+    type: "plan/rectangles/delete",
+    rectangleId: "rect_a"
+  });
+
+  assert(nextPlan !== plan, "Delete should produce a new plan object.");
+  assertEqual(nextPlan.entities.rectangles.length, 1);
+  assertEqual(nextPlan.entities.rectangles[0].id, "rect_b");
+  assertEqual(nextPlan.entities.openings.length, 1);
+  assertEqual(nextPlan.entities.openings[0].id, "open_2");
+  assertEqual(nextPlan.entities.rooms.length, 1);
+  assertDeepEqual(nextPlan.entities.rooms[0], {
+    id: "room_keep",
+    name: "Living",
+    roomType: "living_room",
+    rectangleIds: ["rect_b"]
+  });
+});

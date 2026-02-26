@@ -9,6 +9,7 @@ import {
   rectangleMeetsMinimumSize,
   resizeRectangleFromHandle
 } from "./geometry/rectangles.js";
+import { buildScaleCalibration, distanceBetweenWorldPoints } from "./geometry/scale.js";
 import { snapDraggedRectangle, snapResizedRectangle } from "./geometry/snapping.js";
 import { createPlanAutosaveController, loadPersistedPlan } from "./persistence/local-plan-storage.js";
 import { createInitialEditorState } from "./state/editor-ui.js";
@@ -22,6 +23,7 @@ const BACKGROUND_OPACITY_STEP = 0.05;
 const BACKGROUND_SCALE_UP = 1.05;
 const BACKGROUND_SCALE_DOWN = 1 / BACKGROUND_SCALE_UP;
 const SNAP_TOLERANCE_PX = 10;
+const MIN_CALIBRATION_LINE_WORLD = 8;
 
 export function mountEditorRuntime(options) {
   const { canvas, statusElement, overlayElement, shellElement, controls = {} } = options;
@@ -128,6 +130,20 @@ export function mountEditorRuntime(options) {
       store.dispatch({ type: "editor/selection/clear" });
       store.dispatch({
         type: "editor/interaction/drawRectStart",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY,
+        startWorldX: worldPoint.x,
+        startWorldY: worldPoint.y
+      });
+      syncEditorChrome();
+      return;
+    }
+
+    if (editorState.tool === "calibrateScale") {
+      store.dispatch({ type: "editor/selection/clear" });
+      store.dispatch({
+        type: "editor/interaction/calibrationStart",
         pointerId: event.pointerId,
         screenX: event.clientX,
         screenY: event.clientY,
@@ -286,6 +302,23 @@ export function mountEditorRuntime(options) {
     }
 
     if (
+      state.editorState.interaction.mode === "calibratingScale" &&
+      state.editorState.interaction.pointerId === event.pointerId &&
+      state.editorState.interaction.calibrationDraft
+    ) {
+      const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
+      store.dispatch({
+        type: "editor/interaction/calibrationMove",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY,
+        currentWorldX: worldPoint.x,
+        currentWorldY: worldPoint.y
+      });
+      return;
+    }
+
+    if (
       state.editorState.interaction.mode === "resizingRect" &&
       state.editorState.interaction.pointerId === event.pointerId &&
       state.editorState.interaction.resizeRectangle
@@ -328,6 +361,14 @@ export function mountEditorRuntime(options) {
 
   const onPointerUp = (event) => {
     const state = store.getState();
+    if (
+      state.editorState.interaction.mode === "calibratingScale" &&
+      state.editorState.interaction.pointerId === event.pointerId &&
+      state.editorState.interaction.calibrationDraft
+    ) {
+      commitScaleCalibrationDraft(state.editorState.interaction.calibrationDraft, state.plan.scale);
+    }
+
     if (
       state.editorState.interaction.mode === "drawingRect" &&
       state.editorState.interaction.pointerId === event.pointerId &&
@@ -414,6 +455,12 @@ export function mountEditorRuntime(options) {
   if (controls.toolDrawRectButton) {
     controls.toolDrawRectButton.addEventListener("click", () => {
       store.dispatch({ type: "editor/tool/set", tool: "drawRect" });
+    });
+  }
+
+  if (controls.toolCalibrateScaleButton) {
+    controls.toolCalibrateScaleButton.addEventListener("click", () => {
+      store.dispatch({ type: "editor/tool/set", tool: "calibrateScale" });
     });
   }
 
@@ -557,6 +604,8 @@ export function mountEditorRuntime(options) {
     drawDebugRectangles(ctx, plan, selection.rectangleId, camera);
     drawSelectedResizeHandles(ctx, plan, editorState);
     drawDraftRectangle(ctx, editorState, camera);
+    drawScaleReferenceLine(ctx, plan, camera);
+    drawCalibrationDraftLine(ctx, editorState, camera);
     drawWorldAxes(ctx, camera, cssWidth, cssHeight);
 
     ctx.restore();
@@ -600,6 +649,8 @@ export function mountEditorRuntime(options) {
     ctx.fillText(`Selected: ${editorState.selection.rectangleId ?? "none"}`, 20, 66);
     ctx.fillText(`Tool: ${editorState.tool}`, 20, 82);
     ctx.fillText(`Mode: ${editorState.interaction.mode}`, 20, 98);
+    const scaleLabel = formatScaleShort(plan.scale);
+    ctx.fillText(`Scale: ${scaleLabel}`, 180, 18);
     ctx.restore();
 
     if (hover.active) {
@@ -631,8 +682,9 @@ export function mountEditorRuntime(options) {
       const tool = editorState.tool;
       const autosaveLabel = formatAutosaveStatusShort(persistenceStatus);
       const backgroundLabel = formatBackgroundShort(plan.background, backgroundImageState);
+      const scaleLabel = formatScaleShort(plan.scale);
       statusElement.textContent =
-        `T-0008 snapping | ${backgroundLabel} | ${autosaveLabel} | tool ${tool} | drag/resize snap | delete key | pan | wheel zoom | ` +
+        `T-0009 scale calibration | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | ` +
         `rects ${plan.entities.rectangles.length} | selected ${selectedId} | ` +
@@ -641,10 +693,11 @@ export function mountEditorRuntime(options) {
 
     if (overlayElement) {
       overlayElement.innerHTML =
-        `T-0008 active (basic snapping + delete-selected). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
+        `T-0009 active (scale calibration). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
         `Background opacity ${Math.round(plan.background.opacity * 100)}%; ` +
         `frame ${Math.round(plan.background.transform.width)}x${Math.round(plan.background.transform.height)} at ` +
         `${Math.round(plan.background.transform.x)}, ${Math.round(plan.background.transform.y)}.<br>` +
+        `${formatScaleDetail(plan.scale)}. Use Calibrate Scale tool to draw a reference line and enter meters.<br>` +
         `Drag/resize snaps within ${SNAP_TOLERANCE_PX}px. Delete uses toolbar button or Delete/Backspace.<br>` +
         `Autosave/load still active: ${describeLoadSource(persistenceStatus.loadSource)}; ${formatAutosaveStatusDetail(persistenceStatus)}.`;
     }
@@ -664,11 +717,17 @@ export function mountEditorRuntime(options) {
     if (controls.toolDrawRectButton) {
       controls.toolDrawRectButton.setAttribute("aria-pressed", state.tool === "drawRect" ? "true" : "false");
     }
+    if (controls.toolCalibrateScaleButton) {
+      controls.toolCalibrateScaleButton.setAttribute("aria-pressed", state.tool === "calibrateScale" ? "true" : "false");
+    }
     if (controls.deleteSelectedButton) {
       controls.deleteSelectedButton.disabled = state.selection.rectangleId == null;
     }
     if (controls.backgroundStatusElement) {
       controls.backgroundStatusElement.textContent = formatBackgroundShort(snapshot.plan.background, backgroundImageState);
+    }
+    if (controls.scaleStatusElement) {
+      controls.scaleStatusElement.textContent = formatScaleToolbarStatus(snapshot.plan.scale);
     }
   }
 
@@ -761,6 +820,43 @@ export function mountEditorRuntime(options) {
     store.dispatch({ type: "editor/selection/clear" });
     store.dispatch({ type: "editor/interaction/end", pointerId: null });
     syncEditorChrome();
+    return true;
+  }
+
+  function commitScaleCalibrationDraft(draft, currentScale) {
+    if (!draft) {
+      return false;
+    }
+
+    const startWorld = draft.startWorld;
+    const endWorld = draft.currentWorld;
+    const worldLength = distanceBetweenWorldPoints(startWorld, endWorld);
+    if (!Number.isFinite(worldLength) || worldLength < MIN_CALIBRATION_LINE_WORLD) {
+      return false;
+    }
+
+    const suggestedMeters = currentScale?.referenceLine?.meters;
+    const promptDefault = Number.isFinite(suggestedMeters) ? String(suggestedMeters) : "";
+    const input = window.prompt(
+      "Enter real-world length for the calibration line (meters):",
+      promptDefault
+    );
+    if (input == null) {
+      return false;
+    }
+
+    const meters = Number.parseFloat(String(input).trim());
+    const calibration = buildScaleCalibration(startWorld, endWorld, meters);
+    if (!calibration) {
+      window.alert("Please enter a positive number of meters.");
+      return false;
+    }
+
+    store.dispatch({
+      type: "plan/scale/setCalibration",
+      referenceLine: calibration.referenceLine,
+      metersPerWorldUnit: calibration.metersPerWorldUnit
+    });
     return true;
   }
 }
@@ -877,6 +973,36 @@ function formatBackgroundShort(background, backgroundImageState) {
   const opacityPercent = Math.round((background?.opacity ?? 0) * 100);
   const imageStatus = formatBackgroundImageStatus(backgroundImageState);
   return `bg ${opacityPercent}% (${imageStatus})`;
+}
+
+function formatScaleShort(scale) {
+  const metersPerWorldUnit = scale?.metersPerWorldUnit;
+  if (!Number.isFinite(metersPerWorldUnit) || metersPerWorldUnit <= 0) {
+    return "scale none";
+  }
+  return `${metersPerWorldUnit.toFixed(4)} m/unit`;
+}
+
+function formatScaleToolbarStatus(scale) {
+  const metersPerWorldUnit = scale?.metersPerWorldUnit;
+  if (!Number.isFinite(metersPerWorldUnit) || metersPerWorldUnit <= 0) {
+    return "Scale not calibrated";
+  }
+
+  const meters = scale.referenceLine?.meters;
+  const refLabel = Number.isFinite(meters) ? `${meters}m ref` : "ref set";
+  return `Scale ${metersPerWorldUnit.toFixed(4)} m/u (${refLabel})`;
+}
+
+function formatScaleDetail(scale) {
+  const metersPerWorldUnit = scale?.metersPerWorldUnit;
+  const referenceLine = scale?.referenceLine;
+  if (!Number.isFinite(metersPerWorldUnit) || !referenceLine) {
+    return "Scale not calibrated yet";
+  }
+
+  const worldLength = Math.hypot(referenceLine.x1 - referenceLine.x0, referenceLine.y1 - referenceLine.y0);
+  return `Scale ${metersPerWorldUnit.toFixed(5)} m/unit from ${referenceLine.meters}m over ${worldLength.toFixed(1)} world units`;
 }
 
 function formatBackgroundImageStatus(backgroundImageState) {
@@ -1059,6 +1185,86 @@ function drawDraftRectangle(ctx, editorState, camera) {
   ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
   ctx.setLineDash([]);
   ctx.restore();
+}
+
+function drawScaleReferenceLine(ctx, plan, camera) {
+  const referenceLine = plan?.scale?.referenceLine;
+  const metersPerWorldUnit = plan?.scale?.metersPerWorldUnit;
+  if (
+    !referenceLine ||
+    !Number.isFinite(referenceLine.x0) ||
+    !Number.isFinite(referenceLine.y0) ||
+    !Number.isFinite(referenceLine.x1) ||
+    !Number.isFinite(referenceLine.y1)
+  ) {
+    return;
+  }
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(178, 86, 15, 0.95)";
+  ctx.fillStyle = "rgba(178, 86, 15, 0.95)";
+  ctx.lineWidth = 2 / camera.zoom;
+  ctx.setLineDash([10 / camera.zoom, 7 / camera.zoom]);
+  ctx.beginPath();
+  ctx.moveTo(referenceLine.x0, referenceLine.y0);
+  ctx.lineTo(referenceLine.x1, referenceLine.y1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const midX = (referenceLine.x0 + referenceLine.x1) / 2;
+  const midY = (referenceLine.y0 + referenceLine.y1) / 2;
+  const label = Number.isFinite(metersPerWorldUnit)
+    ? `${referenceLine.meters}m (${metersPerWorldUnit.toFixed(4)} m/u)`
+    : `${referenceLine.meters}m`;
+  ctx.font = `${12 / camera.zoom}px Georgia, serif`;
+  ctx.textBaseline = "bottom";
+  ctx.fillText(label, midX + 6 / camera.zoom, midY - 6 / camera.zoom);
+
+  drawCalibrationEndpoint(ctx, referenceLine.x0, referenceLine.y0, camera);
+  drawCalibrationEndpoint(ctx, referenceLine.x1, referenceLine.y1, camera);
+  ctx.restore();
+}
+
+function drawCalibrationDraftLine(ctx, editorState, camera) {
+  const draft = editorState.interaction.calibrationDraft;
+  if (!draft) {
+    return;
+  }
+
+  const start = draft.startWorld;
+  const end = draft.currentWorld;
+  const length = distanceBetweenWorldPoints(start, end);
+  if (!Number.isFinite(length) || length <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(178, 86, 15, 0.9)";
+  ctx.fillStyle = "rgba(178, 86, 15, 0.9)";
+  ctx.lineWidth = 2 / camera.zoom;
+  ctx.setLineDash([8 / camera.zoom, 6 / camera.zoom]);
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  ctx.lineTo(end.x, end.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  drawCalibrationEndpoint(ctx, start.x, start.y, camera);
+  drawCalibrationEndpoint(ctx, end.x, end.y, camera);
+
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  ctx.font = `${12 / camera.zoom}px Georgia, serif`;
+  ctx.textBaseline = "bottom";
+  ctx.fillText(`${length.toFixed(1)} world units`, midX + 6 / camera.zoom, midY - 6 / camera.zoom);
+  ctx.restore();
+}
+
+function drawCalibrationEndpoint(ctx, x, y, camera) {
+  const radius = 4 / camera.zoom;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawWorldAxes(ctx, camera, cssWidth, cssHeight) {

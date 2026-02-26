@@ -43,6 +43,7 @@ If visual guides are added, keep them lightweight and derived from transient edi
   - contact-only snapping (edge touch with overlap; corner touch allowed)
   - same-edge alignment snapping when rectangles are already touching on the other axis
 - Manual browser verification passed (user) after rule refinements.
+- Known deferred bug (reported after ticket completion): when dragging a rectangle that is already side-touching another rectangle, `top-top` sliding alignment may fail to snap in some cases even though `bottom-top` corner alignment can still snap. Defer fix to follow-up bug ticket / regression pass.
 
 ## Log (append-only)
 - 2026-02-26 11:31: Ticket created for S002 committed backlog.
@@ -50,3 +51,4 @@ If visual guides are added, keep them lightweight and derived from transient edi
 - 2026-02-26 13:20: Fixed snapping bug causing non-contact alignment snapping; restricted to contact-only rules.
 - 2026-02-26 13:27: Extended contact snapping to support same-edge alignment while already touching and corner-touch drag/resize cases.
 - 2026-02-26 13:34: User verified snapping behavior matches intended contact-only rules. Marked DONE.
+- 2026-02-26 14:xx: User reported deferred regression: side-touch drag `top-top` alignment sometimes does not snap (while some corner alignments still do). Documented for follow-up instead of fixing in current commit.

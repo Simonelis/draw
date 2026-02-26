@@ -93,6 +93,26 @@ export function planReducer(plan, action) {
       });
     }
 
+    case "plan/scale/setCalibration": {
+      const referenceLine = normalizeScaleReferenceLinePayload(action.referenceLine);
+      const metersPerWorldUnit = positiveFiniteNumber(action.metersPerWorldUnit, null);
+      if (!referenceLine || metersPerWorldUnit == null) {
+        return plan;
+      }
+
+      if (hasSameScaleCalibration(plan.scale, referenceLine, metersPerWorldUnit)) {
+        return plan;
+      }
+
+      return stampPlan({
+        ...plan,
+        scale: {
+          metersPerWorldUnit,
+          referenceLine
+        }
+      });
+    }
+
     case "plan/rectangles/create": {
       const nextRectangle = action.rectangle ?? createRoomRectangleEntity(action.rectangleId, action.x, action.y, action.w, action.h);
       return stampPlan({
@@ -343,4 +363,45 @@ function cleanupOpeningsAfterRectangleDelete(openings, deletedRectangleId) {
     }
     return host.rectangleId !== deletedRectangleId;
   });
+}
+
+function normalizeScaleReferenceLinePayload(rawReferenceLine) {
+  if (!rawReferenceLine || typeof rawReferenceLine !== "object") {
+    return null;
+  }
+
+  const x0 = finiteNumberOrNull(rawReferenceLine.x0);
+  const y0 = finiteNumberOrNull(rawReferenceLine.y0);
+  const x1 = finiteNumberOrNull(rawReferenceLine.x1);
+  const y1 = finiteNumberOrNull(rawReferenceLine.y1);
+  const meters = positiveFiniteNumber(rawReferenceLine.meters, null);
+
+  if (x0 == null || y0 == null || x1 == null || y1 == null || meters == null) {
+    return null;
+  }
+
+  return { x0, y0, x1, y1, meters };
+}
+
+function hasSameScaleCalibration(scale, nextReferenceLine, nextMetersPerWorldUnit) {
+  const currentReferenceLine = scale?.referenceLine;
+  const currentMetersPerWorldUnit = scale?.metersPerWorldUnit;
+  return (
+    currentReferenceLine != null &&
+    currentMetersPerWorldUnit != null &&
+    currentReferenceLine.x0 === nextReferenceLine.x0 &&
+    currentReferenceLine.y0 === nextReferenceLine.y0 &&
+    currentReferenceLine.x1 === nextReferenceLine.x1 &&
+    currentReferenceLine.y1 === nextReferenceLine.y1 &&
+    currentReferenceLine.meters === nextReferenceLine.meters &&
+    currentMetersPerWorldUnit === nextMetersPerWorldUnit
+  );
+}
+
+function finiteNumberOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+function positiveFiniteNumber(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }

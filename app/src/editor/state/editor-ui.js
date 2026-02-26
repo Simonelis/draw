@@ -10,7 +10,7 @@ const DEFAULT_CAMERA = {
 
 export function createInitialEditorState() {
   return {
-    tool: "navigate", // "navigate" | "drawRect"
+    tool: "navigate", // "navigate" | "drawRect" | "calibrateScale"
     viewport: {
       cssWidth: 1,
       cssHeight: 1,
@@ -26,7 +26,8 @@ export function createInitialEditorState() {
       lastScreen: null,
       dragRectangle: null,
       drawRectDraft: null,
-      resizeRectangle: null
+      resizeRectangle: null,
+      calibrationDraft: null
     }
   };
 }
@@ -107,7 +108,8 @@ export function editorUiReducer(state, action) {
           lastScreen: { x: action.screenX, y: action.screenY },
           dragRectangle: null,
           drawRectDraft: null,
-          resizeRectangle: null
+          resizeRectangle: null,
+          calibrationDraft: null
         }
       };
 
@@ -139,7 +141,8 @@ export function editorUiReducer(state, action) {
             offsetY: action.offsetY
           },
           drawRectDraft: null,
-          resizeRectangle: null
+          resizeRectangle: null,
+          calibrationDraft: null
         }
       };
 
@@ -170,7 +173,8 @@ export function editorUiReducer(state, action) {
             startWorld: { x: action.startWorldX, y: action.startWorldY },
             currentWorld: { x: action.startWorldX, y: action.startWorldY }
           },
-          resizeRectangle: null
+          resizeRectangle: null,
+          calibrationDraft: null
         }
       };
 
@@ -212,7 +216,8 @@ export function editorUiReducer(state, action) {
               w: action.rectW,
               h: action.rectH
             }
-          }
+          },
+          calibrationDraft: null
         }
       };
 
@@ -231,6 +236,43 @@ export function editorUiReducer(state, action) {
         }
       };
 
+    case "editor/interaction/calibrationStart":
+      return {
+        ...state,
+        interaction: {
+          mode: "calibratingScale",
+          pointerId: action.pointerId,
+          lastScreen: { x: action.screenX, y: action.screenY },
+          dragRectangle: null,
+          drawRectDraft: null,
+          resizeRectangle: null,
+          calibrationDraft: {
+            startWorld: { x: action.startWorldX, y: action.startWorldY },
+            currentWorld: { x: action.startWorldX, y: action.startWorldY }
+          }
+        }
+      };
+
+    case "editor/interaction/calibrationMove":
+      if (
+        state.interaction.mode !== "calibratingScale" ||
+        state.interaction.pointerId !== action.pointerId ||
+        !state.interaction.calibrationDraft
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        interaction: {
+          ...state.interaction,
+          lastScreen: { x: action.screenX, y: action.screenY },
+          calibrationDraft: {
+            ...state.interaction.calibrationDraft,
+            currentWorld: { x: action.currentWorldX, y: action.currentWorldY }
+          }
+        }
+      };
+
     case "editor/interaction/end":
       if (action.pointerId != null && state.interaction.pointerId !== action.pointerId) {
         return state;
@@ -243,7 +285,8 @@ export function editorUiReducer(state, action) {
           lastScreen: null,
           dragRectangle: null,
           drawRectDraft: null,
-          resizeRectangle: null
+          resizeRectangle: null,
+          calibrationDraft: null
         }
       };
 
