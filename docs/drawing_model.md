@@ -12,8 +12,9 @@ This doc captures the current “shape authoring” direction suggested by the p
 ## Snapping / magnetic behavior
 Goal: make users draw *clean* geometry so we can avoid fancy early algorithms.
 - Basic snap candidate (within a pixel threshold) aligns edges.
-- “Magnetic links” persist alignment so resizing one element moves/adjusts the neighbor edge.
+- “Magnetic links” can persist alignment so resizing one element moves/adjusts the neighbor edge.
 - Provide an “unlink snaps” escape hatch for when the user wants to break constraints.
+- Current priority decision: keep contact-only snapping and defer persistent magnetic links/unlink until after first perimeter/baseboard outputs are working.
 
 ## Rooms, tags, and merges
 - Each rectangle belongs to a logical room.

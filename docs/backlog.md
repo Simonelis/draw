@@ -42,7 +42,8 @@ Goal: a drawing experience that makes it easy to trace a 2BR in <5 minutes.
 - A1. Project skeleton + dev workflow
 - A2. Canvas editor (pan/zoom/render loop)
 - A3. Rectangle authoring (draw/select/drag/resize)
-- A4. Snapping + magnetic links + unlink
+- A4. Snapping (ephemeral/contact-only)
+- A4b. Magnetic links + unlink (deferred until after first perimeter/baseboard outputs)
 - A5. Background screenshot overlay + opacity controls
 - A6. Scale setting (reference line → meters)
 - A7. Geometry validation (“plan is complete” checks)
@@ -72,3 +73,7 @@ Goal: compute baseboards and show an explainable estimate.
 - E2. Baseboard quantity with exclusions (room types + openings)
 - E3. “Highlight counted segments” overlay (debug)
 - E4. Local JSON price catalog + cost totals
+
+## Priority note (2026-02-26)
+- Prioritize wall-thickness authoring + derived perimeter geometry before persistent magnetic-link behavior.
+- Rationale: perimeter/baseboard feedback delivers value sooner, while sticky links can be deferred without blocking geometry derivation.
