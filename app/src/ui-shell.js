@@ -14,6 +14,8 @@ export function createEditorShell(root) {
   const resetViewButton = root.querySelector("[data-editor-action='camera-reset']");
   const resetPlanButton = root.querySelector("[data-editor-action='plan-reset']");
   const seedDebugButton = root.querySelector("[data-editor-action='plan-seed-debug']");
+  const toolNavigateButton = root.querySelector("[data-editor-action='tool-navigate']");
+  const toolDrawRectButton = root.querySelector("[data-editor-action='tool-draw-rect']");
 
   if (!canvas || !shellElement) return;
 
@@ -25,7 +27,9 @@ export function createEditorShell(root) {
     controls: {
       resetViewButton,
       resetPlanButton,
-      seedDebugButton
+      seedDebugButton,
+      toolNavigateButton,
+      toolDrawRectButton
     }
   });
 }
@@ -40,8 +44,8 @@ function buildShell() {
         <h1>Apartment Planner MVP</h1>
       </div>
       <p>
-        T-0005 adds the first real rectangle interaction slice on top of the runtime foundation:
-        topmost hit-test selection and rectangle drag on Plan Model v0.
+        T-0006 adds rectangle creation and resize handles on top of the existing selection/drag runtime,
+        still without snapping.
       </p>
       <div class="meta-row" aria-label="Sprint metadata">
         <div class="pill">
@@ -50,23 +54,25 @@ function buildShell() {
         </div>
         <div class="pill">
           <strong>Ticket</strong>
-          T-0005
+          T-0006
         </div>
       </div>
       <ol class="checklist" aria-label="Immediate next steps">
-        <li>This ticket: topmost rectangle select + drag without snapping.</li>
-        <li>Drag empty canvas to pan; wheel zoom stays cursor-anchored.</li>
-        <li>Next: T-0006 rectangle create + resize (no snapping yet).</li>
+        <li>This ticket: draw rectangles and resize selected rectangles.</li>
+        <li>Keep select/drag/pan behavior stable and explicit.</li>
+        <li>Next: snapping/magnetic behavior in later tickets.</li>
       </ol>
     </aside>
     <section class="panel editor-frame" aria-label="Editor">
       <div class="toolbar" role="toolbar" aria-label="Editor toolbar">
+        <button type="button" data-editor-action="tool-navigate" aria-pressed="true">Navigate</button>
+        <button type="button" data-editor-action="tool-draw-rect" aria-pressed="false">Draw Rect</button>
         <button type="button" class="primary" data-editor-action="plan-reset">New Empty Plan</button>
         <button type="button" data-editor-action="plan-seed-debug">Seed Debug Rects</button>
         <button type="button" data-editor-action="camera-reset">Reset View</button>
         <span class="status" data-editor-status>Initializing editor runtime…</span>
       </div>
-      <div class="canvas-shell" data-pan-mode="idle">
+      <div class="canvas-shell" data-pan-mode="idle" data-tool-mode="navigate">
         <canvas id="editorCanvas" aria-label="Editor canvas"></canvas>
         <div class="canvas-overlay" data-editor-overlay>
           Runtime foundation loading…

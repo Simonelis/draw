@@ -33,6 +33,17 @@ export function planReducer(plan, action) {
     case "plan/replace":
       return stampPlan(action.plan);
 
+    case "plan/rectangles/create": {
+      const nextRectangle = action.rectangle ?? createRoomRectangleEntity(action.rectangleId, action.x, action.y, action.w, action.h);
+      return stampPlan({
+        ...plan,
+        entities: {
+          ...plan.entities,
+          rectangles: [...plan.entities.rectangles, nextRectangle]
+        }
+      });
+    }
+
     case "plan/rectangles/move": {
       const rectangleIndex = plan.entities.rectangles.findIndex((rectangle) => rectangle.id === action.rectangleId);
       if (rectangleIndex < 0) {
@@ -49,6 +60,40 @@ export function planReducer(plan, action) {
         ...current,
         x: action.x,
         y: action.y
+      };
+
+      return stampPlan({
+        ...plan,
+        entities: {
+          ...plan.entities,
+          rectangles: nextRectangles
+        }
+      });
+    }
+
+    case "plan/rectangles/setGeometry": {
+      const rectangleIndex = plan.entities.rectangles.findIndex((rectangle) => rectangle.id === action.rectangleId);
+      if (rectangleIndex < 0) {
+        return plan;
+      }
+
+      const current = plan.entities.rectangles[rectangleIndex];
+      if (
+        current.x === action.x &&
+        current.y === action.y &&
+        current.w === action.w &&
+        current.h === action.h
+      ) {
+        return plan;
+      }
+
+      const nextRectangles = plan.entities.rectangles.slice();
+      nextRectangles[rectangleIndex] = {
+        ...current,
+        x: action.x,
+        y: action.y,
+        w: action.w,
+        h: action.h
       };
 
       return stampPlan({
@@ -127,5 +172,19 @@ function stampPlan(plan) {
       ...plan.meta,
       updatedAt: new Date().toISOString()
     }
+  };
+}
+
+function createRoomRectangleEntity(id, x, y, w, h) {
+  return {
+    id,
+    kind: "roomRect",
+    x,
+    y,
+    w,
+    h,
+    wallCm: { top: 0, right: 0, bottom: 0, left: 0 },
+    roomId: null,
+    label: null
   };
 }

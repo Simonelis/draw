@@ -65,3 +65,33 @@ This slice does **not** include rectangle selection/drag/create/resize yet. Thos
    - selection/drag still works after plan replacement
 
 This slice still excludes create/resize/snapping/magnetic links (`T-0006` and later).
+
+## T-0006 manual smoke check (rectangle create + resize, no snapping)
+
+1. Start the server and open `http://127.0.0.1:4173`.
+2. Confirm the sidebar says `T-0006` and the toolbar shows:
+   - `Navigate`
+   - `Draw Rect`
+   - `New Empty Plan`
+   - `Seed Debug Rects`
+3. In `Draw Rect` mode:
+   - drag on empty canvas to create a rectangle
+   - a new rectangle appears and becomes selected
+4. Try a tiny click/drag in `Draw Rect` mode:
+   - no rectangle should be created (minimum size threshold)
+5. Switch to `Navigate` mode and click the created rectangle:
+   - selection outline appears
+   - resize handles are visible
+6. Drag a corner or edge handle:
+   - rectangle resizes smoothly
+   - width/height cannot collapse below the minimum threshold
+7. Drag inside the rectangle (not a handle):
+   - rectangle moves (existing `T-0005` behavior still works)
+8. Drag empty canvas:
+   - camera pans (no regression)
+9. Use mouse wheel while hovering canvas:
+   - zoom remains functional
+10. Press `New Empty Plan`, then `Draw Rect`:
+   - creating/resizing still works after plan reset
+
+This slice intentionally excludes snapping/magnetic alignment. Those come later.

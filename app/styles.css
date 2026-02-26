@@ -128,6 +128,11 @@ body {
   cursor: pointer;
 }
 
+.toolbar button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent-soft) 70%, white);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
 .toolbar button.primary {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
@@ -157,12 +162,24 @@ body {
   cursor: grab;
 }
 
+.canvas-shell[data-tool-mode="drawRect"][data-pan-mode="idle"] canvas {
+  cursor: crosshair;
+}
+
+.canvas-shell[data-pan-mode="drawingRect"] canvas {
+  cursor: crosshair;
+}
+
 .canvas-shell[data-pan-mode="panning"] canvas {
   cursor: grabbing;
 }
 
 .canvas-shell[data-pan-mode="draggingRect"] canvas {
   cursor: grabbing;
+}
+
+.canvas-shell[data-pan-mode="resizingRect"] canvas {
+  cursor: nwse-resize;
 }
 
 .canvas-overlay {

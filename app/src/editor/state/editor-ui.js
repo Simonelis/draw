@@ -10,7 +10,7 @@ const DEFAULT_CAMERA = {
 
 export function createInitialEditorState() {
   return {
-    tool: "navigate",
+    tool: "navigate", // "navigate" | "drawRect"
     viewport: {
       cssWidth: 1,
       cssHeight: 1,
@@ -24,13 +24,24 @@ export function createInitialEditorState() {
       mode: "idle",
       pointerId: null,
       lastScreen: null,
-      dragRectangle: null
+      dragRectangle: null,
+      drawRectDraft: null,
+      resizeRectangle: null
     }
   };
 }
 
 export function editorUiReducer(state, action) {
   switch (action.type) {
+    case "editor/tool/set":
+      if (state.tool === action.tool) {
+        return state;
+      }
+      return {
+        ...state,
+        tool: action.tool
+      };
+
     case "editor/selection/set":
       if (state.selection.rectangleId === action.rectangleId) {
         return state;
@@ -94,7 +105,9 @@ export function editorUiReducer(state, action) {
           mode: "panning",
           pointerId: action.pointerId,
           lastScreen: { x: action.screenX, y: action.screenY },
-          dragRectangle: null
+          dragRectangle: null,
+          drawRectDraft: null,
+          resizeRectangle: null
         }
       };
 
@@ -124,13 +137,88 @@ export function editorUiReducer(state, action) {
             rectangleId: action.rectangleId,
             offsetX: action.offsetX,
             offsetY: action.offsetY
-          }
+          },
+          drawRectDraft: null,
+          resizeRectangle: null
         }
       };
 
     case "editor/interaction/rectDragMove":
       if (
         state.interaction.mode !== "draggingRect" ||
+        state.interaction.pointerId !== action.pointerId
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        interaction: {
+          ...state.interaction,
+          lastScreen: { x: action.screenX, y: action.screenY }
+        }
+      };
+
+    case "editor/interaction/drawRectStart":
+      return {
+        ...state,
+        interaction: {
+          mode: "drawingRect",
+          pointerId: action.pointerId,
+          lastScreen: { x: action.screenX, y: action.screenY },
+          dragRectangle: null,
+          drawRectDraft: {
+            startWorld: { x: action.startWorldX, y: action.startWorldY },
+            currentWorld: { x: action.startWorldX, y: action.startWorldY }
+          },
+          resizeRectangle: null
+        }
+      };
+
+    case "editor/interaction/drawRectMove":
+      if (
+        state.interaction.mode !== "drawingRect" ||
+        state.interaction.pointerId !== action.pointerId ||
+        !state.interaction.drawRectDraft
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        interaction: {
+          ...state.interaction,
+          lastScreen: { x: action.screenX, y: action.screenY },
+          drawRectDraft: {
+            ...state.interaction.drawRectDraft,
+            currentWorld: { x: action.currentWorldX, y: action.currentWorldY }
+          }
+        }
+      };
+
+    case "editor/interaction/resizeStart":
+      return {
+        ...state,
+        interaction: {
+          mode: "resizingRect",
+          pointerId: action.pointerId,
+          lastScreen: { x: action.screenX, y: action.screenY },
+          dragRectangle: null,
+          drawRectDraft: null,
+          resizeRectangle: {
+            rectangleId: action.rectangleId,
+            handleName: action.handleName,
+            snapshot: {
+              x: action.rectX,
+              y: action.rectY,
+              w: action.rectW,
+              h: action.rectH
+            }
+          }
+        }
+      };
+
+    case "editor/interaction/resizeMove":
+      if (
+        state.interaction.mode !== "resizingRect" ||
         state.interaction.pointerId !== action.pointerId
       ) {
         return state;
@@ -153,7 +241,9 @@ export function editorUiReducer(state, action) {
           mode: "idle",
           pointerId: null,
           lastScreen: null,
-          dragRectangle: null
+          dragRectangle: null,
+          drawRectDraft: null,
+          resizeRectangle: null
         }
       };
 

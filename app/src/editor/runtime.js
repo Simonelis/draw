@@ -2,11 +2,19 @@ import { screenToWorld, worldToScreen } from "./geometry/coordinates.js";
 import {
   computeRectangleDragOffset,
   computeRectanglePositionFromPointer,
-  hitTestRectangles
+  getResizeHandles,
+  hitTestRectangles,
+  hitTestResizeHandles,
+  normalizeRectangleFromPoints,
+  rectangleMeetsMinimumSize,
+  resizeRectangleFromHandle
 } from "./geometry/rectangles.js";
 import { createInitialEditorState } from "./state/editor-ui.js";
 import { createEmptyPlan } from "./state/plan.js";
 import { createEditorSessionStore } from "./state/session-store.js";
+
+const MIN_RECT_SIZE = 16;
+const HANDLE_SIZE_PX = 14;
 
 export function mountEditorRuntime(options) {
   const { canvas, statusElement, overlayElement, shellElement, controls = {} } = options;
@@ -29,6 +37,7 @@ export function mountEditorRuntime(options) {
   let framesSinceSample = 0;
   let fps = 0;
   const pointerHover = { active: false, screenX: 0, screenY: 0 };
+  let nextUserRectangleId = 1;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -62,12 +71,60 @@ export function mountEditorRuntime(options) {
     if (event.button !== 0 && event.button !== 1) return;
     const point = toCanvasLocalPoint(canvas, event.clientX, event.clientY);
     const state = store.getState();
-    const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
-    const hit = event.button === 0
-      ? hitTestRectangles(state.plan.entities.rectangles, worldPoint)
-      : null;
+    const { editorState, plan } = state;
+    const worldPoint = screenToWorld(editorState.camera, point.x, point.y);
+    const selectedRectangle = getSelectedRectangle(plan, editorState);
 
     canvas.setPointerCapture(event.pointerId);
+
+    if (event.button === 1) {
+      store.dispatch({
+        type: "editor/interaction/panStart",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY
+      });
+      syncEditorChrome();
+      return;
+    }
+
+    if (editorState.tool === "drawRect") {
+      store.dispatch({ type: "editor/selection/clear" });
+      store.dispatch({
+        type: "editor/interaction/drawRectStart",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY,
+        startWorldX: worldPoint.x,
+        startWorldY: worldPoint.y
+      });
+      syncEditorChrome();
+      return;
+    }
+
+    if (selectedRectangle) {
+      const handleHit = hitTestResizeHandles(selectedRectangle, worldPoint, editorState.camera.zoom, {
+        handleSizePx: HANDLE_SIZE_PX
+      });
+      if (handleHit) {
+        store.dispatch({
+          type: "editor/interaction/resizeStart",
+          pointerId: event.pointerId,
+          screenX: event.clientX,
+          screenY: event.clientY,
+          rectangleId: selectedRectangle.id,
+          handleName: handleHit.name,
+          rectX: selectedRectangle.x,
+          rectY: selectedRectangle.y,
+          rectW: selectedRectangle.w,
+          rectH: selectedRectangle.h
+        });
+        syncEditorChrome();
+        return;
+      }
+    }
+
+    const hit = hitTestRectangles(plan.entities.rectangles, worldPoint);
     if (hit) {
       const dragOffset = computeRectangleDragOffset(hit.rectangle, worldPoint);
 
@@ -84,18 +141,18 @@ export function mountEditorRuntime(options) {
         offsetX: dragOffset.x,
         offsetY: dragOffset.y
       });
-    } else {
-      if (event.button === 0) {
-        store.dispatch({ type: "editor/selection/clear" });
-      }
-      store.dispatch({
-        type: "editor/interaction/panStart",
-        pointerId: event.pointerId,
-        screenX: event.clientX,
-        screenY: event.clientY
-      });
+      syncEditorChrome();
+      return;
     }
-    syncPanCursor();
+
+    store.dispatch({ type: "editor/selection/clear" });
+    store.dispatch({
+      type: "editor/interaction/panStart",
+      pointerId: event.pointerId,
+      screenX: event.clientX,
+      screenY: event.clientY
+    });
+    syncEditorChrome();
   };
 
   const onPointerMove = (event) => {
@@ -155,15 +212,88 @@ export function mountEditorRuntime(options) {
         screenX: event.clientX,
         screenY: event.clientY
       });
+      return;
+    }
+
+    if (
+      state.editorState.interaction.mode === "drawingRect" &&
+      state.editorState.interaction.pointerId === event.pointerId &&
+      state.editorState.interaction.drawRectDraft
+    ) {
+      const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
+      store.dispatch({
+        type: "editor/interaction/drawRectMove",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY,
+        currentWorldX: worldPoint.x,
+        currentWorldY: worldPoint.y
+      });
+      return;
+    }
+
+    if (
+      state.editorState.interaction.mode === "resizingRect" &&
+      state.editorState.interaction.pointerId === event.pointerId &&
+      state.editorState.interaction.resizeRectangle
+    ) {
+      const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
+      const resizeState = state.editorState.interaction.resizeRectangle;
+      const nextRect = resizeRectangleFromHandle(
+        resizeState.snapshot,
+        resizeState.handleName,
+        worldPoint,
+        { minSize: MIN_RECT_SIZE }
+      );
+
+      store.dispatch({
+        type: "plan/rectangles/setGeometry",
+        rectangleId: resizeState.rectangleId,
+        x: nextRect.x,
+        y: nextRect.y,
+        w: nextRect.w,
+        h: nextRect.h
+      });
+      store.dispatch({
+        type: "editor/interaction/resizeMove",
+        pointerId: event.pointerId,
+        screenX: event.clientX,
+        screenY: event.clientY
+      });
     }
   };
 
   const onPointerUp = (event) => {
+    const state = store.getState();
+    if (
+      state.editorState.interaction.mode === "drawingRect" &&
+      state.editorState.interaction.pointerId === event.pointerId &&
+      state.editorState.interaction.drawRectDraft
+    ) {
+      const draft = state.editorState.interaction.drawRectDraft;
+      const nextRect = normalizeRectangleFromPoints(draft.startWorld, draft.currentWorld);
+      if (rectangleMeetsMinimumSize(nextRect, MIN_RECT_SIZE)) {
+        const rectangleId = `rect_user_${nextUserRectangleId++}`;
+        store.dispatch({
+          type: "plan/rectangles/create",
+          rectangleId,
+          x: nextRect.x,
+          y: nextRect.y,
+          w: nextRect.w,
+          h: nextRect.h
+        });
+        store.dispatch({
+          type: "editor/selection/set",
+          rectangleId
+        });
+      }
+    }
+
     store.dispatch({
       type: "editor/interaction/end",
       pointerId: event.pointerId
     });
-    syncPanCursor();
+    syncEditorChrome();
   };
 
   const onPointerCancel = (event) => {
@@ -212,12 +342,24 @@ export function mountEditorRuntime(options) {
     });
   }
 
+  if (controls.toolNavigateButton) {
+    controls.toolNavigateButton.addEventListener("click", () => {
+      store.dispatch({ type: "editor/tool/set", tool: "navigate" });
+    });
+  }
+
+  if (controls.toolDrawRectButton) {
+    controls.toolDrawRectButton.addEventListener("click", () => {
+      store.dispatch({ type: "editor/tool/set", tool: "drawRect" });
+    });
+  }
+
   store.subscribe(() => {
-    syncPanCursor();
+    syncEditorChrome();
   });
 
   resize();
-  syncPanCursor();
+  syncEditorChrome();
   startRenderLoop();
 
   return {
@@ -267,6 +409,8 @@ export function mountEditorRuntime(options) {
     drawGrid(ctx, camera, cssWidth, cssHeight);
     drawBackgroundFrame(ctx, plan);
     drawDebugRectangles(ctx, plan, selection.rectangleId, camera);
+    drawSelectedResizeHandles(ctx, plan, editorState);
+    drawDraftRectangle(ctx, editorState, camera);
     drawWorldAxes(ctx, camera, cssWidth, cssHeight);
 
     ctx.restore();
@@ -298,8 +442,8 @@ export function mountEditorRuntime(options) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.strokeStyle = "rgba(0,0,0,0.15)";
     ctx.lineWidth = 1;
-    ctx.fillRect(12, 12, 300, 88);
-    ctx.strokeRect(12, 12, 300, 88);
+    ctx.fillRect(12, 12, 320, 104);
+    ctx.strokeRect(12, 12, 320, 104);
 
     ctx.fillStyle = "#1f1f1f";
     ctx.font = "12px Georgia, serif";
@@ -308,7 +452,8 @@ export function mountEditorRuntime(options) {
     ctx.fillText(`Camera: ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)}`, 20, 34);
     ctx.fillText(`Rects: ${plan.entities.rectangles.length}`, 20, 50);
     ctx.fillText(`Selected: ${editorState.selection.rectangleId ?? "none"}`, 20, 66);
-    ctx.fillText(`Mode: ${editorState.interaction.mode}`, 20, 82);
+    ctx.fillText(`Tool: ${editorState.tool}`, 20, 82);
+    ctx.fillText(`Mode: ${editorState.interaction.mode}`, 20, 98);
     ctx.restore();
 
     if (hover.active) {
@@ -337,8 +482,9 @@ export function mountEditorRuntime(options) {
     if (statusElement) {
       const camera = editorState.camera;
       const selectedId = editorState.selection.rectangleId ?? "none";
+      const tool = editorState.tool;
       statusElement.textContent =
-        `T-0005 selection+drag | drag rect to move, drag empty to pan, wheel to zoom | ` +
+        `T-0006 create+resize | tool ${tool} | drag rect move | drag empty pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | ` +
         `rects ${plan.entities.rectangles.length} | selected ${selectedId} | ` +
@@ -347,16 +493,24 @@ export function mountEditorRuntime(options) {
 
     if (overlayElement) {
       overlayElement.innerHTML =
-        `T-0005 active.<br>` +
-        `Click rectangle to select, then drag to move. Drag empty canvas to pan.<br>` +
-        `Wheel zoom stays cursor-anchored. Buttons still dispatch reducer actions.`;
+        `T-0006 active.<br>` +
+        `Use Draw Rect tool to drag-create rectangles. In Navigate tool, drag selected rectangle or use handles to resize.<br>` +
+        `No snapping in this slice.`;
     }
   }
 
-  function syncPanCursor() {
-    const mode = store.getState().editorState.interaction.mode;
+  function syncEditorChrome() {
+    const state = store.getState().editorState;
+    const mode = state.interaction.mode;
     if (shellElement) {
       shellElement.dataset.panMode = mode;
+      shellElement.dataset.toolMode = state.tool;
+    }
+    if (controls.toolNavigateButton) {
+      controls.toolNavigateButton.setAttribute("aria-pressed", state.tool === "navigate" ? "true" : "false");
+    }
+    if (controls.toolDrawRectButton) {
+      controls.toolDrawRectButton.setAttribute("aria-pressed", state.tool === "drawRect" ? "true" : "false");
     }
   }
 
@@ -445,6 +599,14 @@ function drawBackgroundFrame(ctx, plan) {
   ctx.restore();
 }
 
+function getSelectedRectangle(plan, editorState) {
+  const selectedId = editorState.selection.rectangleId;
+  if (!selectedId) {
+    return null;
+  }
+  return plan.entities.rectangles.find((rectangle) => rectangle.id === selectedId) ?? null;
+}
+
 function drawDebugRectangles(ctx, plan, selectedRectangleId, camera) {
   for (const rect of plan.entities.rectangles) {
     const isWall = rect.kind === "wallRect";
@@ -474,6 +636,51 @@ function drawDebugRectangles(ctx, plan, selectedRectangleId, camera) {
 
     ctx.restore();
   }
+}
+
+function drawSelectedResizeHandles(ctx, plan, editorState) {
+  const selectedRectangle = getSelectedRectangle(plan, editorState);
+  if (!selectedRectangle) {
+    return;
+  }
+
+  const handles = getResizeHandles(selectedRectangle, editorState.camera.zoom, {
+    handleSizePx: HANDLE_SIZE_PX
+  });
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.strokeStyle = "rgba(35, 85, 235, 0.95)";
+  ctx.lineWidth = 1.5 / editorState.camera.zoom;
+
+  for (const handle of handles) {
+    ctx.fillRect(handle.x, handle.y, handle.w, handle.h);
+    ctx.strokeRect(handle.x, handle.y, handle.w, handle.h);
+  }
+
+  ctx.restore();
+}
+
+function drawDraftRectangle(ctx, editorState, camera) {
+  const draft = editorState.interaction.drawRectDraft;
+  if (!draft) {
+    return;
+  }
+
+  const rect = normalizeRectangleFromPoints(draft.startWorld, draft.currentWorld);
+  if (rect.w === 0 && rect.h === 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = "rgba(35, 85, 235, 0.10)";
+  ctx.strokeStyle = "rgba(35, 85, 235, 0.9)";
+  ctx.lineWidth = 1.5 / camera.zoom;
+  ctx.setLineDash([8 / camera.zoom, 6 / camera.zoom]);
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 function drawWorldAxes(ctx, camera, cssWidth, cssHeight) {
