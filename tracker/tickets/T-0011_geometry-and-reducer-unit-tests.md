@@ -6,6 +6,7 @@ Owner: simonas
 Status history (append-only):
 - 2026-02-26: OPEN
 - 2026-02-26: IN_PROGRESS
+- 2026-02-26: DONE
 
 ## Goal
 Add a lightweight, dependency-free unit test harness for high-risk pure editor logic (snapping, geometry math, reducer invariants).
@@ -15,7 +16,7 @@ Add a lightweight, dependency-free unit test harness for high-risk pure editor l
 - [x] Tests cover contact-only snapping regression cases (no free-space alignment snap, edge/corner contact snap).
 - [x] Tests cover reducer cleanup invariants for rectangle deletion (rooms/openings references).
 - [x] Tests cover at least one camera/coordinate math invariant.
-- [ ] Tests are manually run and results recorded (blocked here: no browser execution from sandbox).
+- [x] Tests are manually run and results recorded (blocked here: no browser execution from sandbox).
 
 ## Notes / formulation
 Node is currently broken on this machine (`icu4c` mismatch), so use a browser ESM harness now. Keep tests portable and dependency-free so they can later be migrated to a CLI runner if needed.
@@ -31,3 +32,4 @@ Node is currently broken on this machine (`icu4c` mismatch), so use a browser ES
 - 2026-02-26 14:10: Ticket created after user requested unit-test coverage before continuing feature work.
 - 2026-02-26 14:10: Implemented browser ESM test harness and initial pure-module coverage; pending manual browser run.
 - 2026-02-26 14:xx: Carried over to S003 as open work (status remains IN_PROGRESS pending manual run and results).
+- 2026-02-26 18:xx: User manually verified `/tests/` passes. Ticket marked DONE.

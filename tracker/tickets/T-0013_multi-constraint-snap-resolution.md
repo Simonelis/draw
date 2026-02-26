@@ -5,6 +5,7 @@ Estimate: 5 points
 Owner: simonas
 Status history (append-only):
 - 2026-02-26: OPEN
+- 2026-02-26: IN_PROGRESS
 
 ## Goal
 Fix drag/resize snapping so the solver can preserve already-valid snaps and add additional compatible snaps, instead of selecting a single snap candidate that may override/block other valid constraints.
@@ -34,7 +35,10 @@ Likely implementation direction (algorithmic):
 - Define tie-breaking only when constraints conflict; prefer preserving currently satisfied constraints over replacing them.
 
 ## Implementation notes
-(fill in after completion)
+- Drag path now evaluates compatible raw `x+y` candidate pairs before single-axis fallback (extends the `T-0012` fix direction).
+- Resize path now also evaluates compatible raw `x+y` candidate pairs before single-axis fallback, allowing contact correction + alignment in the same corner-resize step.
+- Added regression coverage in `app/tests/specs/snapping.test.js` for resize multi-constraint composition (`nw` handle case with side-contact correction + `top-top` alignment).
 
 ## Log (append-only)
 - 2026-02-26 17:44: Ticket created after user clarified snapping must preserve multiple simultaneous constraints (including already-active snaps) instead of overriding with a single best candidate.
+- 2026-02-26 18:xx: Started implementation by extending raw dual-axis candidate composition from drag path to resize path and adding a resize regression test; pending manual verification.

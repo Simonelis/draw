@@ -87,3 +87,20 @@ test("resize snapping allows same-edge alignment when already side-touching", ()
   assertClose(result.rectangle.h, 100);
   assertEqual(result.snap.y?.target?.rectangleId, "rect_target");
 });
+
+test("resize snapping composes contact + top-top alignment for corner resize", () => {
+  const target = rectangle("rect_target", 0, 0, 100, 100);
+  const proposed = { x: 102, y: 4, w: 58, h: 56 };
+
+  const result = snapResizedRectangle(proposed, "nw", [target], {
+    toleranceWorld: 6,
+    minSize: 16
+  });
+
+  assertClose(result.rectangle.x, 100);
+  assertClose(result.rectangle.y, 0);
+  assertClose(result.rectangle.w, 60);
+  assertClose(result.rectangle.h, 60);
+  assertEqual(result.snap.x?.target?.rectangleId, "rect_target");
+  assertEqual(result.snap.y?.target?.rectangleId, "rect_target");
+});
