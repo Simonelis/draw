@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+  <body>
+    <!-- Tiny "plus" button -->
+    <button id="addRect" title="Draw rectangle">+</button>
+    <canvas id="c"></canvas>
+
+    <script>
+      // ===== 0) UI TOOL STATE =====
+      const ui = {
+        tool: "select" // "select" | "drawRect"
+      };
+
+      const addRectBtn = document.getElementById("addRect");
+      addRectBtn.style.position = "fixed";
+      addRectBtn.style.left = "8px";
+      addRectBtn.style.top = "8px";
+      addRectBtn.style.zIndex = 10;
+
+      addRectBtn.addEventListener("click", () => {
+        ui.tool = "drawRect";
+      });
+
+      // ===== 1) CANVAS SETUP (DPR-aware) =====
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+
+      function resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.style.width = cssW + "px";
+        canvas.style.height = cssH + "px";
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+
+        // Draw in CSS pixels; scale once so 1 unit in drawing = 1 CSS pixel
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      // ===== 2) WORLD MODEL (objects live here) =====
+      const objects = [
+        { id: 1, x: 100, y: 100, w: 160, h: 100 },
+        { id: 2, x: 400, y: 200, w: 120, h: 160 },
+      ];
+      let nextId = 3;
+
+      // ===== 3) CAMERA (pan + zoom) =====
+      const camera = { x: 0, y: 0, zoom: 1 };
+
+      function screenToWorld(sx, sy) {
+        return { x: camera.x + sx / camera.zoom, y: camera.y + sy / camera.zoom };
+      }
+
+      // ===== 4) HIT TESTING =====
+      function hitTest(worldPt) {
+        for (let i = objects.length - 1; i >= 0; i--) {
+          const o = objects[i];
+          if (
+            worldPt.x >= o.x && worldPt.x <= o.x + o.w &&
+            worldPt.y >= o.y && worldPt.y <= o.y + o.h
+          ) return o;
+        }
+        return null;
+      }
+
+      // ===== 5) INPUT STATE MACHINE =====
+      const pointer = {
+        down: false,
+        sx: 0, sy: 0,     // last screen pos
+        mode: "idle",     // "idle" | "drag" | "pan" | "drawRect"
+        target: null,
+        dragOffsetX: 0,
+        dragOffsetY: 0
+      };
+
+      // Draft rect while drawing
+      const draft = {
+        active: false,
+        x0: 0, y0: 0,   // start corner in world
+        x1: 0, y1: 0    // current corner in world
+      };
+
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        pointer.down = true;
+
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w = screenToWorld(sx, sy);
+
+        pointer.sx = sx; pointer.sy = sy;
+
+        // If user clicked "+" tool, start drawing a new rectangle
+        if (ui.tool === "drawRect" && e.button === 0) {
+          pointer.mode = "drawRect";
+          draft.active = true;
+          draft.x0 = w.x; draft.y0 = w.y;
+          draft.x1 = w.x; draft.y1 = w.y;
+          return;
+        }
+
+        // Otherwise, normal behavior: drag object if hit, else pan
+        const hit = hitTest(w);
+        if (hit && e.button === 0) {
+          pointer.mode = "drag";
+          pointer.target = hit;
+          pointer.dragOffsetX = w.x - hit.x;
+          pointer.dragOffsetY = w.y - hit.y;
+
+          // bring to front
+          const idx = objects.indexOf(hit);
+          objects.splice(idx, 1);
+          objects.push(hit);
+        } else {
+          pointer.mode = "pan";
+          pointer.target = null;
+        }
+      });
+
+      canvas.addEventListener("pointermove", (e) => {
+        if (!pointer.down) return;
+
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w = screenToWorld(sx, sy);
+
+        if (pointer.mode === "drawRect" && draft.active) {
+          draft.x1 = w.x;
+          draft.y1 = w.y;
+          return;
+        }
+
+        if (pointer.mode === "drag" && pointer.target) {
+          pointer.target.x = w.x - pointer.dragOffsetX;
+          pointer.target.y = w.y - pointer.dragOffsetY;
+        } else if (pointer.mode === "pan") {
+          const dxScreen = sx - pointer.sx;
+          const dyScreen = sy - pointer.sy;
+          camera.x -= dxScreen / camera.zoom;
+          camera.y -= dyScreen / camera.zoom;
+          pointer.sx = sx;
+          pointer.sy = sy;
+        }
+      });
+
+      canvas.addEventListener("pointerup", () => {
+        // Finish drawing rect if we were drawing
+        if (pointer.mode === "drawRect" && draft.active) {
+          const x = Math.min(draft.x0, draft.x1);
+          const y = Math.min(draft.y0, draft.y1);
+          const w = Math.abs(draft.x1 - draft.x0);
+          const h = Math.abs(draft.y1 - draft.y0);
+
+          // avoid creating tiny accidental rectangles
+          if (w > 3 && h > 3) {
+            objects.push({ id: nextId++, x, y, w, h });
+          }
+
+          draft.active = false;
+          ui.tool = "select"; // one-shot: go back to normal
+        }
+
+        pointer.down = false;
+        pointer.mode = "idle";
+        pointer.target = null;
+      });
+
+      // Zoom with wheel, anchored at cursor
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+
+        const sx = e.clientX;
+        const sy = e.clientY;
+
+        const before = screenToWorld(sx, sy);
+
+        const zoomFactor = Math.exp(-e.deltaY * 0.001);
+        const newZoom = Math.min(6, Math.max(0.2, camera.zoom * zoomFactor));
+        camera.zoom = newZoom;
+
+        const after = screenToWorld(sx, sy);
+
+        camera.x += (before.x - after.x);
+        camera.y += (before.y - after.y);
+      }, { passive: false });
+
+      // ===== 6) RENDER LOOP =====
+      function draw() {
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const dpr = window.devicePixelRatio || 1;
+
+        // world -> screen transform
+        ctx.save();
+        ctx.setTransform(
+          dpr * camera.zoom, 0,
+          0, dpr * camera.zoom,
+          -(camera.x * camera.zoom) * dpr,
+          -(camera.y * camera.zoom) * dpr
+        );
+
+        // grid (optional)
+        ctx.lineWidth = 1 / camera.zoom;
+        ctx.strokeStyle = "#ddd";
+        const grid = 50;
+        const left = camera.x;
+        const top = camera.y;
+        const right = camera.x + cssW / camera.zoom;
+        const bottom = camera.y + cssH / camera.zoom;
+
+        const startX = Math.floor(left / grid) * grid;
+        const startY = Math.floor(top / grid) * grid;
+
+        for (let x = startX; x < right; x += grid) {
+          ctx.beginPath();
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+        }
+        for (let y = startY; y < bottom; y += grid) {
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+        }
+
+        // objects
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
+        ctx.strokeStyle = "black";
+        for (const o of objects) {
+          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.strokeRect(o.x, o.y, o.w, o.h);
+        }
+
+        // draft rectangle preview
+        if (draft.active) {
+          const x = Math.min(draft.x0, draft.x1);
+          const y = Math.min(draft.y0, draft.y1);
+          const w = Math.abs(draft.x1 - draft.x0);
+          const h = Math.abs(draft.y1 - draft.y0);
+
+          ctx.strokeStyle = "blue";
+          ctx.lineWidth = 2 / camera.zoom;
+          ctx.strokeRect(x, y, w, h);
+        }
+
+        ctx.restore();
+
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    </script>
+  </body>
+</html>

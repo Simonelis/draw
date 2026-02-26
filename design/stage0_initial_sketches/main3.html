@@ -1,0 +1,554 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MVP v3</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: sans-serif;
+      }
+
+      #toolbar {
+        position: fixed;
+        left: 8px;
+        top: 8px;
+        z-index: 20;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      #toolbar button {
+        height: 28px;
+        min-width: 28px;
+        padding: 0 8px;
+      }
+
+      #modeLabel {
+        position: fixed;
+        left: 8px;
+        top: 44px;
+        z-index: 20;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid #bbb;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <button id="addRect" title="Draw rectangle">+</button>
+      <button id="lockMode" title="Lock rectangles">&#128274;</button>
+      <button id="doneLock" title="Finish lock">Done lock</button>
+      <button id="cancelLock" title="Cancel lock">Cancel</button>
+    </div>
+    <div id="modeLabel"></div>
+    <canvas id="c"></canvas>
+
+    <script>
+      const SNAP_DISTANCE = 12;
+      const SNAP_OVERLAP_TOLERANCE = 10;
+
+      const ui = {
+        tool: "select" // "select" | "drawRect" | "lockSelect"
+      };
+
+      const objects = [
+        { id: 1, x: 100, y: 100, w: 160, h: 100, groupId: null },
+        { id: 2, x: 400, y: 200, w: 120, h: 160, groupId: null }
+      ];
+      let nextId = 3;
+      let nextGroupId = 1;
+      const lockDraftSet = new Set();
+
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+      const addRectBtn = document.getElementById("addRect");
+      const lockModeBtn = document.getElementById("lockMode");
+      const doneLockBtn = document.getElementById("doneLock");
+      const cancelLockBtn = document.getElementById("cancelLock");
+      const modeLabel = document.getElementById("modeLabel");
+
+      function resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.style.width = cssW + "px";
+        canvas.style.height = cssH + "px";
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+
+      const camera = { x: 0, y: 0, zoom: 1 };
+
+      function screenToWorld(sx, sy) {
+        return {
+          x: camera.x + sx / camera.zoom,
+          y: camera.y + sy / camera.zoom
+        };
+      }
+
+      function worldToScreen(wx, wy) {
+        return {
+          x: (wx - camera.x) * camera.zoom,
+          y: (wy - camera.y) * camera.zoom
+        };
+      }
+
+      function hitTest(worldPt) {
+        for (let index = objects.length - 1; index >= 0; index--) {
+          const object = objects[index];
+          if (
+            worldPt.x >= object.x &&
+            worldPt.x <= object.x + object.w &&
+            worldPt.y >= object.y &&
+            worldPt.y <= object.y + object.h
+          ) {
+            return object;
+          }
+        }
+        return null;
+      }
+
+      function getById(id) {
+        return objects.find((object) => object.id === id) || null;
+      }
+
+      function getDragMembers(target) {
+        if (target.groupId == null) {
+          return [target];
+        }
+        return objects.filter((object) => object.groupId === target.groupId);
+      }
+
+      function bringIdsToFront(ids) {
+        const idSet = new Set(ids);
+        const keep = objects.filter((object) => !idSet.has(object.id));
+        const move = objects.filter((object) => idSet.has(object.id));
+        objects.splice(0, objects.length, ...keep, ...move);
+      }
+
+      function overlap1d(a0, a1, b0, b1, tolerance = 0) {
+        return Math.min(a1, b1) - Math.max(a0, b0) >= -tolerance;
+      }
+
+      function computeSnapCandidate(movingRect, movingIds) {
+        const staticRects = objects.filter((object) => !movingIds.has(object.id));
+        if (!staticRects.length) {
+          return null;
+        }
+
+        let bestX = null;
+        let bestY = null;
+
+        for (const staticRect of staticRects) {
+          if (
+            overlap1d(
+              movingRect.y,
+              movingRect.y + movingRect.h,
+              staticRect.y,
+              staticRect.y + staticRect.h,
+              SNAP_OVERLAP_TOLERANCE
+            )
+          ) {
+            const leftToRight = staticRect.x + staticRect.w - movingRect.x;
+            const rightToLeft = staticRect.x - (movingRect.x + movingRect.w);
+
+            if (Math.abs(leftToRight) <= SNAP_DISTANCE && (!bestX || Math.abs(leftToRight) < Math.abs(bestX.delta))) {
+              bestX = {
+                delta: leftToRight,
+                line: staticRect.x + staticRect.w
+              };
+            }
+
+            if (Math.abs(rightToLeft) <= SNAP_DISTANCE && (!bestX || Math.abs(rightToLeft) < Math.abs(bestX.delta))) {
+              bestX = {
+                delta: rightToLeft,
+                line: staticRect.x
+              };
+            }
+          }
+
+          if (
+            overlap1d(
+              movingRect.x,
+              movingRect.x + movingRect.w,
+              staticRect.x,
+              staticRect.x + staticRect.w,
+              SNAP_OVERLAP_TOLERANCE
+            )
+          ) {
+            const topToBottom = staticRect.y + staticRect.h - movingRect.y;
+            const bottomToTop = staticRect.y - (movingRect.y + movingRect.h);
+
+            if (Math.abs(topToBottom) <= SNAP_DISTANCE && (!bestY || Math.abs(topToBottom) < Math.abs(bestY.delta))) {
+              bestY = {
+                delta: topToBottom,
+                line: staticRect.y + staticRect.h
+              };
+            }
+
+            if (Math.abs(bottomToTop) <= SNAP_DISTANCE && (!bestY || Math.abs(bottomToTop) < Math.abs(bestY.delta))) {
+              bestY = {
+                delta: bottomToTop,
+                line: staticRect.y
+              };
+            }
+          }
+        }
+
+        if (!bestX && !bestY) {
+          return null;
+        }
+
+        return {
+          shiftX: bestX ? bestX.delta : 0,
+          shiftY: bestY ? bestY.delta : 0,
+          lineX: bestX ? bestX.line : null,
+          lineY: bestY ? bestY.line : null
+        };
+      }
+
+      const pointer = {
+        down: false,
+        sx: 0,
+        sy: 0,
+        mode: "idle", // "idle" | "drag" | "pan" | "drawRect"
+        target: null,
+        dragOffsetX: 0,
+        dragOffsetY: 0,
+        movingIds: new Set(),
+        startPositions: new Map(),
+        anchorStartX: 0,
+        anchorStartY: 0,
+        snap: null
+      };
+
+      const draft = {
+        active: false,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0
+      };
+
+      function resetPointer() {
+        pointer.down = false;
+        pointer.mode = "idle";
+        pointer.target = null;
+        pointer.movingIds = new Set();
+        pointer.startPositions = new Map();
+        pointer.snap = null;
+      }
+
+      function applyDragAt(worldPt) {
+        const anchorRawX = worldPt.x - pointer.dragOffsetX;
+        const anchorRawY = worldPt.y - pointer.dragOffsetY;
+        const dx = anchorRawX - pointer.anchorStartX;
+        const dy = anchorRawY - pointer.anchorStartY;
+
+        for (const id of pointer.movingIds) {
+          const object = getById(id);
+          const start = pointer.startPositions.get(id);
+          if (!object || !start) continue;
+          object.x = start.x + dx;
+          object.y = start.y + dy;
+        }
+
+        const candidate = computeSnapCandidate(pointer.target, pointer.movingIds);
+        pointer.snap = candidate;
+
+        if (candidate) {
+          for (const id of pointer.movingIds) {
+            const object = getById(id);
+            if (!object) continue;
+            object.x += candidate.shiftX;
+            object.y += candidate.shiftY;
+          }
+        }
+      }
+
+      function updateToolbar() {
+        const inLock = ui.tool === "lockSelect";
+        doneLockBtn.style.display = inLock ? "inline-block" : "none";
+        cancelLockBtn.style.display = inLock ? "inline-block" : "none";
+        lockModeBtn.disabled = inLock;
+
+        if (ui.tool === "drawRect") {
+          modeLabel.textContent = "Mode: draw rectangle (drag on canvas)";
+        } else if (inLock) {
+          modeLabel.textContent = `Mode: lock select (${lockDraftSet.size} selected)`;
+        } else {
+          modeLabel.textContent = "Mode: select";
+        }
+      }
+
+      addRectBtn.addEventListener("click", () => {
+        ui.tool = "drawRect";
+        lockDraftSet.clear();
+        updateToolbar();
+      });
+
+      lockModeBtn.addEventListener("click", () => {
+        ui.tool = "lockSelect";
+        lockDraftSet.clear();
+        updateToolbar();
+      });
+
+      doneLockBtn.addEventListener("click", () => {
+        if (lockDraftSet.size >= 2) {
+          const groupId = nextGroupId++;
+          for (const object of objects) {
+            if (lockDraftSet.has(object.id)) {
+              object.groupId = groupId;
+            }
+          }
+        }
+        lockDraftSet.clear();
+        ui.tool = "select";
+        updateToolbar();
+      });
+
+      cancelLockBtn.addEventListener("click", () => {
+        lockDraftSet.clear();
+        ui.tool = "select";
+        updateToolbar();
+      });
+
+      updateToolbar();
+
+      canvas.addEventListener("pointerdown", (event) => {
+        const worldPt = screenToWorld(event.clientX, event.clientY);
+        const hit = hitTest(worldPt);
+
+        if (ui.tool === "lockSelect") {
+          if (event.button === 0 && hit) {
+            if (lockDraftSet.has(hit.id)) {
+              lockDraftSet.delete(hit.id);
+            } else {
+              lockDraftSet.add(hit.id);
+            }
+            updateToolbar();
+          }
+          return;
+        }
+
+        canvas.setPointerCapture(event.pointerId);
+        pointer.down = true;
+        pointer.sx = event.clientX;
+        pointer.sy = event.clientY;
+
+        if (ui.tool === "drawRect" && event.button === 0) {
+          pointer.mode = "drawRect";
+          draft.active = true;
+          draft.x0 = worldPt.x;
+          draft.y0 = worldPt.y;
+          draft.x1 = worldPt.x;
+          draft.y1 = worldPt.y;
+          return;
+        }
+
+        if (hit && event.button === 0) {
+          pointer.mode = "drag";
+          pointer.target = hit;
+          pointer.dragOffsetX = worldPt.x - hit.x;
+          pointer.dragOffsetY = worldPt.y - hit.y;
+          pointer.anchorStartX = hit.x;
+          pointer.anchorStartY = hit.y;
+
+          const dragMembers = getDragMembers(hit);
+          const dragIds = dragMembers.map((object) => object.id);
+          bringIdsToFront(dragIds);
+          pointer.movingIds = new Set(dragIds);
+          pointer.startPositions = new Map(
+            dragMembers.map((object) => [object.id, { x: object.x, y: object.y }])
+          );
+          pointer.snap = null;
+          return;
+        }
+
+        pointer.mode = "pan";
+        pointer.target = null;
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (!pointer.down) return;
+
+        const worldPt = screenToWorld(event.clientX, event.clientY);
+
+        if (pointer.mode === "drawRect" && draft.active) {
+          draft.x1 = worldPt.x;
+          draft.y1 = worldPt.y;
+          return;
+        }
+
+        if (pointer.mode === "drag" && pointer.target) {
+          applyDragAt(worldPt);
+          return;
+        }
+
+        if (pointer.mode === "pan") {
+          const dxScreen = event.clientX - pointer.sx;
+          const dyScreen = event.clientY - pointer.sy;
+          camera.x -= dxScreen / camera.zoom;
+          camera.y -= dyScreen / camera.zoom;
+          pointer.sx = event.clientX;
+          pointer.sy = event.clientY;
+        }
+      });
+
+      canvas.addEventListener("pointerup", () => {
+        if (pointer.mode === "drawRect" && draft.active) {
+          const x = Math.min(draft.x0, draft.x1);
+          const y = Math.min(draft.y0, draft.y1);
+          const w = Math.abs(draft.x1 - draft.x0);
+          const h = Math.abs(draft.y1 - draft.y0);
+          if (w > 3 && h > 3) {
+            objects.push({ id: nextId++, x, y, w, h, groupId: null });
+          }
+          draft.active = false;
+          ui.tool = "select";
+          updateToolbar();
+        }
+
+        resetPointer();
+      });
+
+      canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const worldBefore = screenToWorld(event.clientX, event.clientY);
+        const zoomFactor = Math.exp(-event.deltaY * 0.001);
+        camera.zoom = Math.min(6, Math.max(0.2, camera.zoom * zoomFactor));
+        const worldAfter = screenToWorld(event.clientX, event.clientY);
+        camera.x += worldBefore.x - worldAfter.x;
+        camera.y += worldBefore.y - worldAfter.y;
+      }, { passive: false });
+
+      function drawGrid(cssW, cssH) {
+        ctx.lineWidth = 1 / camera.zoom;
+        ctx.strokeStyle = "#ddd";
+        const grid = 50;
+        const left = camera.x;
+        const top = camera.y;
+        const right = camera.x + cssW / camera.zoom;
+        const bottom = camera.y + cssH / camera.zoom;
+        const startX = Math.floor(left / grid) * grid;
+        const startY = Math.floor(top / grid) * grid;
+
+        for (let x = startX; x < right; x += grid) {
+          ctx.beginPath();
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+        }
+
+        for (let y = startY; y < bottom; y += grid) {
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+        }
+      }
+
+      function groupColor(groupId) {
+        if (groupId == null) return "rgba(0,0,0,0.08)";
+        const seed = groupId * 57;
+        const hue = seed % 360;
+        return `hsla(${hue}, 70%, 55%, 0.18)`;
+      }
+
+      function drawObjects() {
+        for (const object of objects) {
+          ctx.fillStyle = groupColor(object.groupId);
+          ctx.strokeStyle = object.groupId == null ? "#222" : "#0a4";
+          ctx.lineWidth = object.groupId == null ? 1 / camera.zoom : 2 / camera.zoom;
+          ctx.fillRect(object.x, object.y, object.w, object.h);
+          ctx.strokeRect(object.x, object.y, object.w, object.h);
+
+          if (ui.tool === "lockSelect" && lockDraftSet.has(object.id)) {
+            ctx.strokeStyle = "#06f";
+            ctx.lineWidth = 3 / camera.zoom;
+            ctx.strokeRect(object.x, object.y, object.w, object.h);
+          }
+        }
+      }
+
+      function drawDraftRect() {
+        if (!draft.active) return;
+        const x = Math.min(draft.x0, draft.x1);
+        const y = Math.min(draft.y0, draft.y1);
+        const w = Math.abs(draft.x1 - draft.x0);
+        const h = Math.abs(draft.y1 - draft.y0);
+        ctx.strokeStyle = "#06f";
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.strokeRect(x, y, w, h);
+      }
+
+      function drawSnapGuides() {
+        if (!(pointer.mode === "drag" && pointer.snap)) return;
+
+        ctx.strokeStyle = "#f04";
+        ctx.lineWidth = 1.5 / camera.zoom;
+        ctx.setLineDash([8 / camera.zoom, 6 / camera.zoom]);
+
+        const viewLeft = camera.x;
+        const viewTop = camera.y;
+        const viewRight = camera.x + window.innerWidth / camera.zoom;
+        const viewBottom = camera.y + window.innerHeight / camera.zoom;
+
+        if (pointer.snap.lineX != null) {
+          ctx.beginPath();
+          ctx.moveTo(pointer.snap.lineX, viewTop);
+          ctx.lineTo(pointer.snap.lineX, viewBottom);
+          ctx.stroke();
+        }
+
+        if (pointer.snap.lineY != null) {
+          ctx.beginPath();
+          ctx.moveTo(viewLeft, pointer.snap.lineY);
+          ctx.lineTo(viewRight, pointer.snap.lineY);
+          ctx.stroke();
+        }
+
+        ctx.setLineDash([]);
+      }
+
+      function draw() {
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const dpr = window.devicePixelRatio || 1;
+        ctx.save();
+        ctx.setTransform(
+          dpr * camera.zoom, 0,
+          0, dpr * camera.zoom,
+          -(camera.x * camera.zoom) * dpr,
+          -(camera.y * camera.zoom) * dpr
+        );
+
+        drawGrid(cssW, cssH);
+        drawObjects();
+        drawDraftRect();
+        drawSnapGuides();
+
+        ctx.restore();
+        requestAnimationFrame(draw);
+      }
+
+      requestAnimationFrame(draw);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html>
+  <body>
+    <canvas id="c"></canvas>
+    <script>
+      // ===== 1) CANVAS SETUP (DPR-aware) =====
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d");
+
+      function resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = window.innerWidth;
+        const cssH = window.innerHeight;
+
+        canvas.style.width = cssW + "px";
+        canvas.style.height = cssH + "px";
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+
+        // We'll draw in CSS pixels; scale once so 1 unit in drawing = 1 CSS pixel
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      // ===== 2) WORLD MODEL (your objects live here) =====
+      // World units are arbitrary; think "meters" or "cm" later.
+      const objects = [
+        { id: 1, x: 100, y: 100, w: 160, h: 100 },
+        { id: 2, x: 400, y: 200, w: 120, h: 160 },
+      ];
+
+      // ===== 3) CAMERA (pan + zoom) =====
+      const camera = {
+        x: 0,   // world coordinate at screen origin
+        y: 0,
+        zoom: 1
+      };
+
+      // Convert screen(CSS px) -> world
+      function screenToWorld(sx, sy) {
+        return {
+          x: camera.x + sx / camera.zoom,
+          y: camera.y + sy / camera.zoom
+        };
+      }
+
+      // Convert world -> screen(CSS px)
+      function worldToScreen(wx, wy) {
+        return {
+          x: (wx - camera.x) * camera.zoom,
+          y: (wy - camera.y) * camera.zoom
+        };
+      }
+
+      // ===== 4) HIT TESTING (screen -> world -> objects) =====
+      function hitTest(worldPt) {
+        // topmost last: simple z-order by array order
+        for (let i = objects.length - 1; i >= 0; i--) {
+          const o = objects[i];
+          if (
+            worldPt.x >= o.x && worldPt.x <= o.x + o.w &&
+            worldPt.y >= o.y && worldPt.y <= o.y + o.h
+          ) return o;
+        }
+        return null;
+      }
+
+      // ===== 5) INPUT STATE MACHINE =====
+      const pointer = {
+        down: false,
+        sx: 0, sy: 0,       // last screen pos
+        wx: 0, wy: 0,       // last world pos
+        mode: "idle",       // "idle" | "drag" | "pan"
+        target: null,
+        dragOffsetX: 0,
+        dragOffsetY: 0
+      };
+
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        pointer.down = true;
+
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w = screenToWorld(sx, sy);
+
+        pointer.sx = sx; pointer.sy = sy;
+        pointer.wx = w.x; pointer.wy = w.y;
+
+        const hit = hitTest(w);
+
+        if (hit && e.button === 0) {
+          // drag object
+          pointer.mode = "drag";
+          pointer.target = hit;
+          pointer.dragOffsetX = w.x - hit.x;
+          pointer.dragOffsetY = w.y - hit.y;
+
+          // bring to front
+          const idx = objects.indexOf(hit);
+          objects.splice(idx, 1);
+          objects.push(hit);
+        } else {
+          // pan world
+          pointer.mode = "pan";
+          pointer.target = null;
+        }
+      });
+
+      canvas.addEventListener("pointermove", (e) => {
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w = screenToWorld(sx, sy);
+
+        if (!pointer.down) return;
+
+        if (pointer.mode === "drag" && pointer.target) {
+          // TRANSFORM-ONLY update: just change x/y
+          pointer.target.x = w.x - pointer.dragOffsetX;
+          pointer.target.y = w.y - pointer.dragOffsetY;
+        } else if (pointer.mode === "pan") {
+          // To pan, move camera opposite to pointer delta in world units
+          const dxScreen = sx - pointer.sx;
+          const dyScreen = sy - pointer.sy;
+          camera.x -= dxScreen / camera.zoom;
+          camera.y -= dyScreen / camera.zoom;
+
+          pointer.sx = sx;
+          pointer.sy = sy;
+        }
+      });
+
+      canvas.addEventListener("pointerup", (e) => {
+        pointer.down = false;
+        pointer.mode = "idle";
+        pointer.target = null;
+      });
+
+      // Zoom with wheel, anchored at cursor (Miro-like feel)
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+
+        const sx = e.clientX;
+        const sy = e.clientY;
+
+        // World point under cursor BEFORE zoom
+        const before = screenToWorld(sx, sy);
+
+        // Apply zoom change (trackpad-friendly)
+        const zoomFactor = Math.exp(-e.deltaY * 0.001);
+        const newZoom = Math.min(6, Math.max(0.2, camera.zoom * zoomFactor));
+        camera.zoom = newZoom;
+
+        // World point under cursor AFTER zoom
+        const after = screenToWorld(sx, sy);
+
+        // Adjust camera so the cursor stays over the same world point
+        camera.x += (before.x - after.x);
+        camera.y += (before.y - after.y);
+      }, { passive: false });
+
+      // ===== 6) RENDER LOOP (one draw per frame) =====
+      function draw() {
+        // Clear in CSS pixels (because ctx is scaled by DPR already)
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // Apply camera transform: world -> screen
+        // We draw world units. Transform maps world coords into screen coords.
+        ctx.save();
+        ctx.setTransform(
+          (window.devicePixelRatio || 1) * camera.zoom, 0,
+          0, (window.devicePixelRatio || 1) * camera.zoom,
+          -(camera.x * camera.zoom) * (window.devicePixelRatio || 1),
+          -(camera.y * camera.zoom) * (window.devicePixelRatio || 1)
+        );
+
+        // Draw grid (optional tiny cue)
+        ctx.lineWidth = 1 / camera.zoom;
+        ctx.strokeStyle = "#ddd";
+        const grid = 50;
+        const left = camera.x;
+        const top = camera.y;
+        const right = camera.x + w / camera.zoom;
+        const bottom = camera.y + h / camera.zoom;
+
+        const startX = Math.floor(left / grid) * grid;
+        const startY = Math.floor(top / grid) * grid;
+
+        for (let x = startX; x < right; x += grid) {
+          ctx.beginPath();
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bottom);
+          ctx.stroke();
+        }
+        for (let y = startY; y < bottom; y += grid) {
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+        }
+
+        // Draw objects in world space
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
+        ctx.strokeStyle = "black";
+        for (const o of objects) {
+          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.strokeRect(o.x, o.y, o.w, o.h);
+        }
+
+        ctx.restore();
+
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+    </script>
+  </body>
+</html>
