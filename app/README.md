@@ -19,6 +19,11 @@ Alternate port:
 bash scripts/dev.sh 8080
 ```
 
+## Snapping reference (for humans)
+
+For current snapping rules and a scenario-by-scenario manual check list, see:
+- `docs/snapping_scenarios.md`
+
 ## T-0004 manual smoke check (runtime foundation)
 
 1. Start the server and open `http://127.0.0.1:4173`.

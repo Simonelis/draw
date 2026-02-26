@@ -27,6 +27,8 @@ Stretch points: 5
 - 2026-02-26: `T-0012` manually verified by user after follow-up drag-path patch (raw dual-axis candidate composition). Ticket marked DONE.
 - 2026-02-26: User manually verified `T-0011` (`/tests/` passes) and `T-0009` (scale calibration flow good). Both tickets marked DONE.
 - 2026-02-26: Started `T-0013` as stretch. Extended multi-constraint raw dual-axis candidate composition to resize snapping and added a resize regression test; pending manual verification.
+- 2026-02-26: Added `docs/snapping_scenarios.md` (human-readable snapping rules + scenario check list) and linked it from `app/README.md` to reduce ambiguity during `T-0013` verification and future snap changes.
+- 2026-02-26: User verified `T-0013` snapping behavior and scenario documentation is in place. Ticket marked DONE.
 
 ## Review (append-only)
 ### Shipped

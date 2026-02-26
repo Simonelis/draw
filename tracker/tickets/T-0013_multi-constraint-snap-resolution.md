@@ -6,17 +6,18 @@ Owner: simonas
 Status history (append-only):
 - 2026-02-26: OPEN
 - 2026-02-26: IN_PROGRESS
+- 2026-02-26: DONE
 
 ## Goal
 Fix drag/resize snapping so the solver can preserve already-valid snaps and add additional compatible snaps, instead of selecting a single snap candidate that may override/block other valid constraints.
 
 ## Acceptance criteria
-- [ ] Dragging a rectangle while it is already side-touching another rectangle can still snap `top-top` / `bottom-bottom` alignments during vertical motion.
-- [ ] Existing valid contact/alignment snaps are preserved while adding new compatible snaps (no unintended unsnapping from snap selection order).
-- [ ] Multiple simultaneous snaps are supported (for example: side contact on one axis plus one or more edge alignments on the other axis).
-- [ ] Corner snapping still works and does not regress.
-- [ ] Resize snapping uses the same constraint-preserving behavior (within handle/min-size rules).
-- [ ] Regression coverage added in `T-0011` tests for drag and resize multi-snap cases.
+- [x] Dragging a rectangle while it is already side-touching another rectangle can still snap `top-top` / `bottom-bottom` alignments during vertical motion.
+- [x] Existing valid contact/alignment snaps are preserved while adding new compatible snaps (no unintended unsnapping from snap selection order).
+- [x] Multiple simultaneous snaps are supported (for example: side contact on one axis plus one or more edge alignments on the other axis).
+- [x] Corner snapping still works and does not regress.
+- [x] Resize snapping uses the same constraint-preserving behavior (within handle/min-size rules).
+- [x] Regression coverage added in `T-0011` tests for drag and resize multi-snap cases.
 
 ## Notes / formulation
 This expands on the narrow regression captured in `T-0012` and addresses the underlying model issue: the current drag/resize snap flow computes candidates per axis, then chooses one "best" result, which can allow a no-op or lower-value snap to block another compatible snap.
@@ -38,7 +39,10 @@ Likely implementation direction (algorithmic):
 - Drag path now evaluates compatible raw `x+y` candidate pairs before single-axis fallback (extends the `T-0012` fix direction).
 - Resize path now also evaluates compatible raw `x+y` candidate pairs before single-axis fallback, allowing contact correction + alignment in the same corner-resize step.
 - Added regression coverage in `app/tests/specs/snapping.test.js` for resize multi-constraint composition (`nw` handle case with side-contact correction + `top-top` alignment).
+- Added human-readable snapping scenario/checklist documentation in `docs/snapping_scenarios.md` and linked it from `app/README.md`.
 
 ## Log (append-only)
 - 2026-02-26 17:44: Ticket created after user clarified snapping must preserve multiple simultaneous constraints (including already-active snaps) instead of overriding with a single best candidate.
 - 2026-02-26 18:xx: Started implementation by extending raw dual-axis candidate composition from drag path to resize path and adding a resize regression test; pending manual verification.
+- 2026-02-26 18:xx: Documented current snapping scenarios + human test matrix to reduce ambiguity during future snapping changes.
+- 2026-02-26 18:xx: User manually verified snapping behavior is good after multi-constraint drag/resize changes. Ticket marked DONE.
