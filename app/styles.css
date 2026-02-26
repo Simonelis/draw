@@ -146,12 +146,19 @@ body {
     linear-gradient(90deg, transparent 31px, rgba(0, 0, 0, 0.03) 32px),
     #fff;
   background-size: 32px 32px;
+  overflow: hidden;
 }
 
 .canvas-shell canvas {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas-shell[data-pan-mode="panning"] canvas {
+  cursor: grabbing;
 }
 
 .canvas-overlay {
@@ -165,6 +172,7 @@ body {
   font-size: 0.86rem;
   color: var(--muted);
   max-width: 420px;
+  line-height: 1.35;
 }
 
 @media (max-width: 960px) {
