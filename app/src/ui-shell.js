@@ -68,22 +68,22 @@ function buildShell() {
         <h1>Apartment Planner MVP</h1>
       </div>
       <p>
-        T-0009 adds scale calibration: draw a reference line, enter the real-world length in meters, and persist the plan scale.
+        T-0014 adds selected-rectangle dimension readouts in world units and meters/cm (when the plan has been calibrated).
       </p>
       <div class="meta-row" aria-label="Sprint metadata">
         <div class="pill">
           <strong>Current Sprint</strong>
-          S002
+          S004
         </div>
         <div class="pill">
           <strong>Ticket</strong>
-          T-0009
+          T-0014
         </div>
       </div>
       <ol class="checklist" aria-label="Immediate next steps">
-        <li>This ticket: calibrate scale from a two-point reference line.</li>
-        <li>Current scale should be visible and persisted in the saved plan.</li>
-        <li>Existing tracing interactions (draw, resize, snap, delete) must keep working.</li>
+        <li>This ticket: show selected rectangle dimensions in world units and calibrated meters/cm.</li>
+        <li>Dimension readouts should update live during drag/resize.</li>
+        <li>Next: geometry validation checks and richer dimension UX.</li>
       </ol>
     </aside>
     <section class="panel editor-frame" aria-label="Editor">

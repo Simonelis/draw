@@ -29,13 +29,20 @@ Stretch points: 5
 - 2026-02-26: Started `T-0013` as stretch. Extended multi-constraint raw dual-axis candidate composition to resize snapping and added a resize regression test; pending manual verification.
 - 2026-02-26: Added `docs/snapping_scenarios.md` (human-readable snapping rules + scenario check list) and linked it from `app/README.md` to reduce ambiguity during `T-0013` verification and future snap changes.
 - 2026-02-26: User verified `T-0013` snapping behavior and scenario documentation is in place. Ticket marked DONE.
+- 2026-02-26: S003 closed after delivering committed backlog and stretch (`T-0013`). S004 starts for dimension correctness + geometry validation.
 
 ## Review (append-only)
 ### Shipped
-- (append at end of sprint)
+- T-0009 (3 pts): Scale calibration (reference line -> meters) with persisted scale/readout.
+- T-0011 (2 pts): Browser-based unit test harness for pure geometry/reducer/scale logic.
+- T-0012 (2 pts): Fix side-touch drag `top-top` snapping regression.
+- T-0013 (5 pts, stretch): Multi-constraint snap resolution (drag + resize) plus snapping scenario documentation.
+- Actual shipped points: 12 (7 committed + 5 stretch).
 
 ### Missed / deferred
-- (append at end of sprint)
+- None.
 
 ### Lessons / changes
-- (append at end of sprint)
+- Snapping bugs become much easier to resolve when behavior is documented as a scenario matrix (`docs/snapping_scenarios.md`).
+- Small pure-test coverage plus fast manual verification works well for interaction-heavy geometry code.
+- Closing and restarting sprints immediately keeps backlog/accounting clearer than extending an already-complete sprint.

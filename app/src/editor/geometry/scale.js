@@ -38,6 +38,28 @@ export function buildScaleCalibration(startPoint, endPoint, meters) {
   };
 }
 
+export function worldLengthToMeters(worldLength, metersPerWorldUnit) {
+  if (!Number.isFinite(worldLength) || worldLength < 0) {
+    return null;
+  }
+  if (!Number.isFinite(metersPerWorldUnit) || metersPerWorldUnit <= 0) {
+    return null;
+  }
+  return worldLength * metersPerWorldUnit;
+}
+
+export function formatMetersAndCentimeters(meters, options = {}) {
+  if (!Number.isFinite(meters) || meters < 0) {
+    return null;
+  }
+
+  const metersDecimals = Number.isInteger(options.metersDecimals) ? options.metersDecimals : 2;
+  const centimetersDecimals = Number.isInteger(options.centimetersDecimals) ? options.centimetersDecimals : 1;
+  const centimeters = meters * 100;
+
+  return `${meters.toFixed(metersDecimals)} m (${centimeters.toFixed(centimetersDecimals)} cm)`;
+}
+
 function isPoint(value) {
   return value != null && Number.isFinite(value.x) && Number.isFinite(value.y);
 }

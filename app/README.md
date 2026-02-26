@@ -209,3 +209,23 @@ This harness is dependency-free and runs in the browser because local Node is cu
    - draw/create/resize rectangles
    - snapping
    - delete rectangle
+
+## T-0014 manual smoke check (selected rectangle dimensions: world + meters/cm)
+
+1. Start the server and open `http://127.0.0.1:4173`.
+2. Ensure at least one rectangle exists (`Seed Debug Rects` is fine).
+3. Click a rectangle to select it.
+4. Confirm selected dimensions appear in:
+   - the top-left debug overlay (`Sel world`, `Sel metric`)
+   - the status line (compact selected dimensions)
+   - the main HTML overlay text (`Selected dimensions: ...`)
+5. Before scale calibration (if not set yet):
+   - world units should still show
+   - metric readout should show a safe fallback message (not crash/NaN)
+6. Calibrate scale (use `Calibrate Scale`), then reselect/drag/resize a rectangle:
+   - metric readout shows meters/cm
+   - values update live during drag and resize
+7. Clear selection:
+   - readouts show a safe `none` state
+8. Reload the page after autosave:
+   - dimensions still render correctly after reopening (with saved scale if previously calibrated)

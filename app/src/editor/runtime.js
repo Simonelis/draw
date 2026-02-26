@@ -9,7 +9,12 @@ import {
   rectangleMeetsMinimumSize,
   resizeRectangleFromHandle
 } from "./geometry/rectangles.js";
-import { buildScaleCalibration, distanceBetweenWorldPoints } from "./geometry/scale.js";
+import {
+  buildScaleCalibration,
+  distanceBetweenWorldPoints,
+  formatMetersAndCentimeters,
+  worldLengthToMeters
+} from "./geometry/scale.js";
 import { snapDraggedRectangle, snapResizedRectangle } from "./geometry/snapping.js";
 import { createPlanAutosaveController, loadPersistedPlan } from "./persistence/local-plan-storage.js";
 import { createInitialEditorState } from "./state/editor-ui.js";
@@ -613,6 +618,7 @@ export function mountEditorRuntime(options) {
 
   function drawScreenOverlay(ctx, editorState, plan, hover, cssWidth, cssHeight) {
     const { camera } = editorState;
+    const selectedRectangle = getSelectedRectangle(plan, editorState);
     const originScreen = worldToScreen(camera, 0, 0);
 
     if (
@@ -637,8 +643,8 @@ export function mountEditorRuntime(options) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.strokeStyle = "rgba(0,0,0,0.15)";
     ctx.lineWidth = 1;
-    ctx.fillRect(12, 12, 320, 104);
-    ctx.strokeRect(12, 12, 320, 104);
+    ctx.fillRect(12, 12, 470, 122);
+    ctx.strokeRect(12, 12, 470, 122);
 
     ctx.fillStyle = "#1f1f1f";
     ctx.font = "12px Georgia, serif";
@@ -651,6 +657,8 @@ export function mountEditorRuntime(options) {
     ctx.fillText(`Mode: ${editorState.interaction.mode}`, 20, 98);
     const scaleLabel = formatScaleShort(plan.scale);
     ctx.fillText(`Scale: ${scaleLabel}`, 180, 18);
+    ctx.fillText(`Sel world: ${formatSelectedRectangleDimensionsWorld(selectedRectangle)}`, 180, 34);
+    ctx.fillText(`Sel metric: ${formatSelectedRectangleDimensionsMetric(selectedRectangle, plan.scale)}`, 180, 50);
     ctx.restore();
 
     if (hover.active) {
@@ -683,21 +691,24 @@ export function mountEditorRuntime(options) {
       const autosaveLabel = formatAutosaveStatusShort(persistenceStatus);
       const backgroundLabel = formatBackgroundShort(plan.background, backgroundImageState);
       const scaleLabel = formatScaleShort(plan.scale);
+      const selectedDimsLabel = formatSelectedRectangleDimensionsStatus(getSelectedRectangle(plan, editorState), plan.scale);
       statusElement.textContent =
-        `T-0009 scale calibration | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | tool ${tool} | pan | wheel zoom | ` +
+        `T-0014 dimensions | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | ` +
-        `rects ${plan.entities.rectangles.length} | selected ${selectedId} | ` +
+        `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedDimsLabel ? ` (${selectedDimsLabel})` : ""} | ` +
         `fps ~${fps.toFixed(0)}`;
     }
 
     if (overlayElement) {
+      const selectedRectangle = getSelectedRectangle(plan, editorState);
       overlayElement.innerHTML =
-        `T-0009 active (scale calibration). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
+        `T-0014 active (dimension readouts from calibrated scale). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
         `Background opacity ${Math.round(plan.background.opacity * 100)}%; ` +
         `frame ${Math.round(plan.background.transform.width)}x${Math.round(plan.background.transform.height)} at ` +
         `${Math.round(plan.background.transform.x)}, ${Math.round(plan.background.transform.y)}.<br>` +
         `${formatScaleDetail(plan.scale)}. Use Calibrate Scale tool to draw a reference line and enter meters.<br>` +
+        `Selected dimensions: ${formatSelectedRectangleDimensionsOverlay(selectedRectangle, plan.scale)}.<br>` +
         `Drag/resize snaps within ${SNAP_TOLERANCE_PX}px. Delete uses toolbar button or Delete/Backspace.<br>` +
         `Autosave/load still active: ${describeLoadSource(persistenceStatus.loadSource)}; ${formatAutosaveStatusDetail(persistenceStatus)}.`;
     }
@@ -1003,6 +1014,55 @@ function formatScaleDetail(scale) {
 
   const worldLength = Math.hypot(referenceLine.x1 - referenceLine.x0, referenceLine.y1 - referenceLine.y0);
   return `Scale ${metersPerWorldUnit.toFixed(5)} m/unit from ${referenceLine.meters}m over ${worldLength.toFixed(1)} world units`;
+}
+
+function formatSelectedRectangleDimensionsWorld(rectangle) {
+  if (!rectangle) {
+    return "none";
+  }
+  return `${rectangle.w.toFixed(1)} x ${rectangle.h.toFixed(1)} wu`;
+}
+
+function formatSelectedRectangleDimensionsMetric(rectangle, scale) {
+  if (!rectangle) {
+    return "none";
+  }
+
+  const metersPerWorldUnit = scale?.metersPerWorldUnit;
+  const widthMeters = worldLengthToMeters(rectangle.w, metersPerWorldUnit);
+  const heightMeters = worldLengthToMeters(rectangle.h, metersPerWorldUnit);
+  if (widthMeters == null || heightMeters == null) {
+    return "set scale to view meters/cm";
+  }
+
+  const widthLabel = formatMetersAndCentimeters(widthMeters, { metersDecimals: 2, centimetersDecimals: 1 });
+  const heightLabel = formatMetersAndCentimeters(heightMeters, { metersDecimals: 2, centimetersDecimals: 1 });
+  return `${widthLabel} x ${heightLabel}`;
+}
+
+function formatSelectedRectangleDimensionsStatus(rectangle, scale) {
+  if (!rectangle) {
+    return "";
+  }
+
+  const metersPerWorldUnit = scale?.metersPerWorldUnit;
+  const widthMeters = worldLengthToMeters(rectangle.w, metersPerWorldUnit);
+  const heightMeters = worldLengthToMeters(rectangle.h, metersPerWorldUnit);
+  if (widthMeters == null || heightMeters == null) {
+    return `${rectangle.w.toFixed(1)}x${rectangle.h.toFixed(1)}wu`;
+  }
+
+  return `${widthMeters.toFixed(2)}m x ${heightMeters.toFixed(2)}m`;
+}
+
+function formatSelectedRectangleDimensionsOverlay(rectangle, scale) {
+  if (!rectangle) {
+    return "none";
+  }
+
+  const worldLabel = `${rectangle.w.toFixed(1)} x ${rectangle.h.toFixed(1)} world units`;
+  const metricLabel = formatSelectedRectangleDimensionsMetric(rectangle, scale);
+  return `${worldLabel}; ${metricLabel}`;
 }
 
 function formatBackgroundImageStatus(backgroundImageState) {

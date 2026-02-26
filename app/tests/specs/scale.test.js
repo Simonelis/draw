@@ -1,4 +1,10 @@
-import { buildScaleCalibration, computeMetersPerWorldUnit, distanceBetweenWorldPoints } from "../../src/editor/geometry/scale.js";
+import {
+  buildScaleCalibration,
+  computeMetersPerWorldUnit,
+  distanceBetweenWorldPoints,
+  formatMetersAndCentimeters,
+  worldLengthToMeters
+} from "../../src/editor/geometry/scale.js";
 import { assertClose, assertEqual, test } from "../test-runner.js";
 
 test("distanceBetweenWorldPoints returns Euclidean distance", () => {
@@ -19,4 +25,19 @@ test("buildScaleCalibration returns reference line and meters-per-unit", () => {
   assertEqual(calibration.referenceLine.meters, 4);
   assertClose(calibration.referenceLine.x0, 10);
   assertClose(calibration.referenceLine.x1, 30);
+});
+
+test("worldLengthToMeters converts world units using scale", () => {
+  assertClose(worldLengthToMeters(200, 0.015), 3);
+  assertEqual(worldLengthToMeters(-1, 0.02), null);
+  assertEqual(worldLengthToMeters(10, null), null);
+});
+
+test("formatMetersAndCentimeters returns a stable metric label", () => {
+  assertEqual(formatMetersAndCentimeters(3.2), "3.20 m (320.0 cm)");
+  assertEqual(
+    formatMetersAndCentimeters(0.375, { metersDecimals: 3, centimetersDecimals: 2 }),
+    "0.375 m (37.50 cm)"
+  );
+  assertEqual(formatMetersAndCentimeters(-1), null);
 });
