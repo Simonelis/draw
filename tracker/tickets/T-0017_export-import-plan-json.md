@@ -5,6 +5,7 @@ Estimate: 3 points
 Owner: simonas
 Status history (append-only):
 - 2026-02-26: OPEN
+- 2026-02-26: IN_PROGRESS
 
 ## Goal
 Allow the user to export the current plan JSON and import a saved plan file, enabling manual backups and sharing before report/export UX exists.
@@ -25,7 +26,17 @@ Scope limits:
 - no multi-file project management
 
 ## Implementation notes
-(fill in after completion)
+- Added toolbar controls in `app/src/ui-shell.js`:
+  - `Export JSON`
+  - `Import JSON` (+ hidden file input)
+- Added `parseImportedPlanJsonText(...)` to `app/src/editor/persistence/local-plan-storage.js` so imports use the same `migratePlan(...)` normalization path as local autosave loads.
+- Added export/import runtime flow in `app/src/editor/runtime.js`:
+  - export current plan to downloaded JSON file (pretty-printed)
+  - import selected JSON file, normalize/migrate, replace current plan, clear selection/interaction, reset tool to navigate
+  - refresh `nextUserRectangleId` after import to avoid id collisions on future rectangle creation
+  - safe error handling for malformed JSON / invalid plan shapes (file I/O status message, no crash)
+- Added file I/O status summaries to debug/status/overlay text and `T-0017` manual smoke-check steps in `app/README.md`.
 
 ## Log (append-only)
 - 2026-02-26 19:xx: Ticket created as S004 stretch backlog.
+- 2026-02-26 20:xx: Started implementation. Added local JSON export/import round-trip through existing plan migration path; pending manual verification.

@@ -266,3 +266,24 @@ This harness is dependency-free and runs in the browser because local Node is cu
    - overlap warning should clear (edge-touch is allowed)
 6. Confirm app remains responsive during drag/resize/pan/zoom with validation visible.
 7. Optional: open `http://127.0.0.1:4173/tests/` and confirm validation tests are listed in the browser test harness.
+
+## T-0017 manual smoke check (export/import plan JSON local round-trip)
+
+1. Start the server and open `http://127.0.0.1:4173`.
+2. Make a visible plan change (create/move/resize rectangle and/or calibrate scale).
+3. Click `Export JSON`:
+   - browser downloads a `.json` file
+   - status/debug/overlay shows file I/O exported state
+4. Click `New Empty Plan` and confirm the canvas is cleared.
+5. Click `Import JSON` and choose the exported file:
+   - plan is restored (rectangles/background/scale as applicable)
+   - editor does not crash
+   - status/debug/overlay shows file I/O imported state
+6. After import, confirm normal interactions still work:
+   - select/drag/resize
+   - pan/zoom
+   - delete rectangle
+   - autosave/reload still works
+7. Invalid file safety check:
+   - try importing a non-JSON or malformed JSON file
+   - app stays responsive and shows a safe file I/O error message (no crash)

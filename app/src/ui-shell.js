@@ -18,6 +18,9 @@ export function createEditorShell(root) {
   const toolDrawRectButton = root.querySelector("[data-editor-action='tool-draw-rect']");
   const toolCalibrateScaleButton = root.querySelector("[data-editor-action='tool-calibrate-scale']");
   const deleteSelectedButton = root.querySelector("[data-editor-action='rect-delete']");
+  const exportJsonButton = root.querySelector("[data-editor-action='plan-export-json']");
+  const importJsonButton = root.querySelector("[data-editor-action='plan-import-json']");
+  const importJsonFileInput = root.querySelector("[data-editor-file-input='plan-import']");
   const backgroundOpacityDownButton = root.querySelector("[data-editor-action='bg-opacity-down']");
   const backgroundOpacityUpButton = root.querySelector("[data-editor-action='bg-opacity-up']");
   const backgroundMoveLeftButton = root.querySelector("[data-editor-action='bg-move-left']");
@@ -44,6 +47,9 @@ export function createEditorShell(root) {
       toolDrawRectButton,
       toolCalibrateScaleButton,
       deleteSelectedButton,
+      exportJsonButton,
+      importJsonButton,
+      importJsonFileInput,
       backgroundOpacityDownButton,
       backgroundOpacityUpButton,
       backgroundMoveLeftButton,
@@ -68,7 +74,7 @@ function buildShell() {
         <h1>Apartment Planner MVP</h1>
       </div>
       <p>
-        T-0016 adds lightweight geometry validation status (warnings in debug/status UI) while keeping editing fast.
+        T-0017 adds local JSON export/import so plans can be backed up and reloaded outside autosave.
       </p>
       <div class="meta-row" aria-label="Sprint metadata">
         <div class="pill">
@@ -77,13 +83,13 @@ function buildShell() {
         </div>
         <div class="pill">
           <strong>Ticket</strong>
-          T-0016
+          T-0017
         </div>
       </div>
       <ol class="checklist" aria-label="Immediate next steps">
-        <li>This ticket: compute and show basic geometry warnings (debug/status UI is enough).</li>
-        <li>Detect at least one useful warning such as missing scale or overlapping rectangles.</li>
-        <li>Next: export/import JSON or deeper validation.</li>
+        <li>This ticket: export current plan JSON and import a saved plan JSON file.</li>
+        <li>Imported files should use the same migration/normalization path as local autosave load.</li>
+        <li>Next: deeper validation or S004 closeout.</li>
       </ol>
     </aside>
     <section class="panel editor-frame" aria-label="Editor">
@@ -92,6 +98,9 @@ function buildShell() {
         <button type="button" data-editor-action="tool-draw-rect" aria-pressed="false">Draw Rect</button>
         <button type="button" data-editor-action="tool-calibrate-scale" aria-pressed="false">Calibrate Scale</button>
         <button type="button" data-editor-action="rect-delete" disabled>Delete Rect</button>
+        <button type="button" data-editor-action="plan-export-json">Export JSON</button>
+        <button type="button" data-editor-action="plan-import-json">Import JSON</button>
+        <input type="file" accept="application/json,.json" data-editor-file-input="plan-import" hidden>
         <span class="toolbar-inline-status" data-scale-status>Scale not calibrated</span>
         <details class="toolbar-disclosure bg-controls">
           <summary>

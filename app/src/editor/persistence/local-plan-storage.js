@@ -43,6 +43,23 @@ export function loadPersistedPlan(options = {}) {
   }
 }
 
+export function parseImportedPlanJsonText(jsonText) {
+  if (typeof jsonText !== "string") {
+    throw new Error("Imported file must contain JSON text.");
+  }
+
+  let raw = null;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON: ${error instanceof Error && error.message ? error.message : String(error)}`
+    );
+  }
+
+  return migratePlan(raw);
+}
+
 export function createPlanAutosaveController(store, options = {}) {
   const storage = options.storage ?? getLocalStorage();
   const key = options.key ?? DEFAULT_STORAGE_KEY;

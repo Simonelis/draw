@@ -17,7 +17,11 @@ import {
 } from "./geometry/scale.js";
 import { snapDraggedRectangle, snapResizedRectangle } from "./geometry/snapping.js";
 import { validateBasicPlanGeometry } from "./geometry/validation.js";
-import { createPlanAutosaveController, loadPersistedPlan } from "./persistence/local-plan-storage.js";
+import {
+  createPlanAutosaveController,
+  loadPersistedPlan,
+  parseImportedPlanJsonText
+} from "./persistence/local-plan-storage.js";
 import { createInitialEditorState } from "./state/editor-ui.js";
 import { createEmptyPlan } from "./state/plan.js";
 import { createEditorSessionStore } from "./state/session-store.js";
@@ -80,6 +84,12 @@ export function mountEditorRuntime(options) {
     image: null,
     status: "idle",
     errorMessage: null
+  };
+  let fileTransferStatus = {
+    phase: "idle",
+    lastAction: null,
+    message: null,
+    at: null
   };
   let lastValidatedPlan = null;
   let lastValidationResult = null;
@@ -534,6 +544,68 @@ export function mountEditorRuntime(options) {
     });
   }
 
+  const onImportJsonFileChange = async (event) => {
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const file = input.files && input.files[0] ? input.files[0] : null;
+    if (!file) {
+      return;
+    }
+
+    setFileTransferStatus({
+      phase: "importing",
+      lastAction: "import",
+      message: `Importing ${file.name}...`
+    });
+
+    try {
+      const text = await file.text();
+      if (destroyed) {
+        return;
+      }
+
+      const importedPlan = parseImportedPlanJsonText(text);
+      store.dispatch({ type: "plan/replace", plan: importedPlan });
+      store.dispatch({ type: "editor/selection/clear" });
+      store.dispatch({ type: "editor/interaction/end", pointerId: null });
+      store.dispatch({ type: "editor/tool/set", tool: "navigate" });
+      nextUserRectangleId = deriveNextUserRectangleId(importedPlan);
+      autosaveController.flushNow("import");
+
+      setFileTransferStatus({
+        phase: "imported",
+        lastAction: "import",
+        message: `Imported ${file.name} (${importedPlan.entities.rectangles.length} rects)`
+      });
+    } catch (error) {
+      console.warn("Failed to import plan JSON.", error);
+      setFileTransferStatus({
+        phase: "error",
+        lastAction: "import",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      input.value = "";
+    }
+  };
+
+  if (controls.exportJsonButton) {
+    controls.exportJsonButton.addEventListener("click", () => {
+      exportCurrentPlanJson();
+    });
+  }
+
+  if (controls.importJsonButton && controls.importJsonFileInput) {
+    controls.importJsonButton.addEventListener("click", () => {
+      controls.importJsonFileInput.value = "";
+      controls.importJsonFileInput.click();
+    });
+    controls.importJsonFileInput.addEventListener("change", onImportJsonFileChange);
+  }
+
   const onWindowKeyDown = (event) => {
     if (shouldIgnoreGlobalKeyDown(event)) {
       return;
@@ -666,6 +738,7 @@ export function mountEditorRuntime(options) {
     ctx.fillText(`Sel metric: ${formatSelectedRectangleDimensionsMetric(selectedRectangle, plan.scale)}`, 180, 50);
     ctx.fillText(`Validation: ${formatValidationSummaryDebug(validation)}`, 180, 66);
     ctx.fillText(`${formatValidationPrimaryMessage(validation)}`, 180, 82);
+    ctx.fillText(`File IO: ${formatFileTransferStatusShort(fileTransferStatus)}`, 180, 98);
     ctx.restore();
 
     drawSelectedRectangleDimensionLabels(ctx, editorState, plan, hover, cssWidth, cssHeight);
@@ -702,8 +775,9 @@ export function mountEditorRuntime(options) {
       const scaleLabel = formatScaleShort(plan.scale);
       const selectedDimsLabel = formatSelectedRectangleDimensionsStatus(getSelectedRectangle(plan, editorState), plan.scale);
       const validationLabel = formatValidationSummaryStatus(validation);
+      const fileIoLabel = formatFileTransferStatusShort(fileTransferStatus);
       statusElement.textContent =
-        `T-0016 validation | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | tool ${tool} | pan | wheel zoom | ` +
+        `T-0017 file io | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | file ${fileIoLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | ` +
         `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedDimsLabel ? ` (${selectedDimsLabel})` : ""} | ` +
@@ -713,13 +787,14 @@ export function mountEditorRuntime(options) {
     if (overlayElement) {
       const selectedRectangle = getSelectedRectangle(plan, editorState);
       overlayElement.innerHTML =
-        `T-0016 active (basic geometry validation status + dimension labels/readouts). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
+        `T-0017 active (local JSON export/import + validation + dimension labels/readouts). Image: ${formatBackgroundImageStatus(backgroundImageState)}.<br>` +
         `Background opacity ${Math.round(plan.background.opacity * 100)}%; ` +
         `frame ${Math.round(plan.background.transform.width)}x${Math.round(plan.background.transform.height)} at ` +
         `${Math.round(plan.background.transform.x)}, ${Math.round(plan.background.transform.y)}.<br>` +
         `${formatScaleDetail(plan.scale)}. Use Calibrate Scale tool to draw a reference line and enter meters.<br>` +
         `Selected dimensions: ${formatSelectedRectangleDimensionsOverlay(selectedRectangle, plan.scale)}.<br>` +
         `Validation: ${formatValidationDetail(validation)}.<br>` +
+        `File I/O: ${formatFileTransferStatusDetail(fileTransferStatus)}.<br>` +
         `Drag/resize snaps within ${SNAP_TOLERANCE_PX}px. Delete uses toolbar button or Delete/Backspace.<br>` +
         `Autosave/load still active: ${describeLoadSource(persistenceStatus.loadSource)}; ${formatAutosaveStatusDetail(persistenceStatus)}.`;
     }
@@ -818,6 +893,45 @@ export function mountEditorRuntime(options) {
     image.src = source;
   }
 
+  function exportCurrentPlanJson() {
+    const { plan } = store.getState();
+
+    try {
+      const json = JSON.stringify(plan, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = buildPlanExportFileName(plan);
+      anchor.style.display = "none";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+
+      setFileTransferStatus({
+        phase: "exported",
+        lastAction: "export",
+        message: `Exported ${anchor.download}`
+      });
+    } catch (error) {
+      console.warn("Failed to export plan JSON.", error);
+      setFileTransferStatus({
+        phase: "error",
+        lastAction: "export",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  function setFileTransferStatus(nextStatus) {
+    fileTransferStatus = {
+      ...fileTransferStatus,
+      ...nextStatus,
+      at: new Date().toISOString()
+    };
+  }
+
   function destroy() {
     destroyed = true;
     autosaveController.destroy();
@@ -835,6 +949,9 @@ export function mountEditorRuntime(options) {
     canvas.removeEventListener("pointercancel", onPointerCancel);
     canvas.removeEventListener("pointerleave", onPointerLeave);
     canvas.removeEventListener("wheel", onWheel);
+    if (controls.importJsonFileInput) {
+      controls.importJsonFileInput.removeEventListener("change", onImportJsonFileChange);
+    }
   }
 
   function deleteSelectedRectangle() {
@@ -1120,6 +1237,55 @@ function formatValidationDetail(validation) {
     .filter((finding) => finding.severity === "warning")
     .map((finding) => finding.message);
   return `WARN ${validation.warningCount}: ${messages.join("; ")}`;
+}
+
+function formatFileTransferStatusShort(status) {
+  const phase = status?.phase ?? "idle";
+  switch (phase) {
+    case "importing":
+      return "importing";
+    case "imported":
+      return "imported";
+    case "exported":
+      return "exported";
+    case "error":
+      return "error";
+    default:
+      return "idle";
+  }
+}
+
+function formatFileTransferStatusDetail(status) {
+  if (!status || status.phase === "idle") {
+    return "idle (use Export JSON / Import JSON in toolbar)";
+  }
+
+  const prefix = status.phase === "error" ? "ERROR" : status.phase.toUpperCase();
+  if (!status.message) {
+    return prefix;
+  }
+  return `${prefix}: ${escapeHtmlForOverlay(status.message)}`;
+}
+
+function buildPlanExportFileName(plan) {
+  const baseName = sanitizeFileName(plan?.meta?.name || "apartment-plan");
+  const timestamp = new Date().toISOString().replaceAll(":", "-");
+  return `${baseName}_${timestamp}.json`;
+}
+
+function sanitizeFileName(value) {
+  return String(value)
+    .trim()
+    .replaceAll(/[^a-zA-Z0-9_-]+/g, "-")
+    .replaceAll(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "apartment-plan";
+}
+
+function escapeHtmlForOverlay(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function drawSelectedRectangleDimensionLabels(ctx, editorState, plan, hover, cssWidth, cssHeight) {

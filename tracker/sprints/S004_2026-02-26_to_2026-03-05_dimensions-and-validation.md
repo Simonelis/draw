@@ -28,6 +28,7 @@ Stretch points: 3
 - 2026-02-26: User manually verified `T-0015` label behavior (visibility, pan/zoom legibility, live drag/resize updates). Ticket marked DONE. Next target: `T-0016`.
 - 2026-02-26: Started `T-0016`. Added pure basic-validation helper/tests (missing scale, overlap, invalid geometry, duplicate IDs) and UI validation summaries in debug/status/overlay; pending manual verification.
 - 2026-02-26: User manually verified `T-0016` validation behavior (missing-scale + overlap warnings) and responsiveness. Ticket marked DONE. Next target: `T-0017` (stretch).
+- 2026-02-26: Started `T-0017` (stretch). Added local JSON export/import toolbar controls, import via existing plan migration path, file I/O status messages, and T-0017 smoke-check steps; pending manual verification.
 
 ## Review (append-only)
 ### Shipped
