@@ -1,4 +1,4 @@
-import { normalizeWallCm, wallCentimetersToWorld } from "./wall-shell.js";
+import { deriveRoomWallDecomposition } from "./room-wall-topology.js";
 
 const OPPOSITE_SIDE = {
   top: "bottom",
@@ -7,11 +7,12 @@ const OPPOSITE_SIDE = {
   left: "right"
 };
 
+export { deriveRoomWallDecomposition } from "./room-wall-topology.js";
+
 export function deriveBaseboardCandidates(plan, options = {}) {
   const topology = deriveRoomWallContactModel(plan, options);
   const {
     roomSides,
-    roomWallContacts,
     sharedBoundaries,
     unsupportedOpenSides,
     roomRectangleCount,
@@ -21,22 +22,39 @@ export function deriveBaseboardCandidates(plan, options = {}) {
     overlapToleranceWorld
   } = topology;
   const sameRoomPruneIntervalsBySideId = collectSameRoomPruneIntervalsBySideId(sharedBoundaries);
-
-  const candidateSegments = roomWallContacts.map((contact) => ({ ...contact }));
+  const crossRoomSupportIntervalsBySideId = collectCrossRoomSupportIntervalsBySideId(
+    sharedBoundaries,
+    overlapToleranceWorld
+  );
+  const roomSideById = new Map(roomSides.map((side) => [side.id, side]));
+  const candidateSegments = [];
   const segments = [];
 
   for (const side of roomSides) {
-    if (!side.hasWallSupport) {
+    const fallbackSupportIntervals = crossRoomSupportIntervalsBySideId.get(side.id) ?? [];
+    const supportIntervals = side.hasWallSupport ? side.supportIntervals : fallbackSupportIntervals;
+    if (supportIntervals.length === 0) {
       continue;
     }
 
     const pruneIntervals = sameRoomPruneIntervalsBySideId.get(side.id) ?? [];
-    for (let supportIndex = 0; supportIndex < side.supportIntervals.length; supportIndex += 1) {
-      const supportInterval = side.supportIntervals[supportIndex];
-      const supportSegmentId = side.supportIntervals.length > 1
+    for (let supportIndex = 0; supportIndex < supportIntervals.length; supportIndex += 1) {
+      const supportInterval = supportIntervals[supportIndex];
+      const supportSegmentId = supportIntervals.length > 1
         ? `${side.id}:support:${supportIndex + 1}`
         : side.id;
-      const intervalWallSource = resolveSupportWallSource(side);
+      const intervalWallSource = side.hasWallSupport ? resolveSupportWallSource(side) : "neighborWall";
+      const candidateSegment = createRoomSideSegment(
+        side,
+        supportInterval.start,
+        supportInterval.end,
+        metersPerWorldUnit,
+        supportSegmentId,
+        intervalWallSource
+      );
+      if (candidateSegment) {
+        candidateSegments.push(candidateSegment);
+      }
 
       const keptIntervals = subtractIntervals(
         supportInterval.start,
@@ -46,7 +64,7 @@ export function deriveBaseboardCandidates(plan, options = {}) {
       );
       for (let pieceIndex = 0; pieceIndex < keptIntervals.length; pieceIndex += 1) {
         const interval = keptIntervals[pieceIndex];
-        const keptSegment = createSegmentFromSideInterval(
+        const keptSegment = createRoomSideSegment(
           side,
           interval.start,
           interval.end,
@@ -60,6 +78,15 @@ export function deriveBaseboardCandidates(plan, options = {}) {
       }
     }
   }
+
+  appendMirroredCrossRoomSegments({
+    sharedBoundaries,
+    roomSideById,
+    segments,
+    candidateSegments,
+    metersPerWorldUnit,
+    overlapToleranceWorld
+  });
 
   const totalLengthWorld = sumSegmentLength(segments);
   const totalLengthMeters = metersPerWorldUnit ? totalLengthWorld * metersPerWorldUnit : null;
@@ -90,20 +117,94 @@ export function deriveBaseboardCandidates(plan, options = {}) {
   };
 }
 
-export function deriveRoomWallContactModel(plan, options = {}) {
-  const rectangles = Array.isArray(plan?.entities?.rectangles) ? plan.entities.rectangles : [];
-  const roomRectangles = rectangles.filter((rectangle) => rectangle?.kind !== "wallRect" && hasRectangleShape(rectangle));
-  const wallRectangles = rectangles.filter((rectangle) => rectangle?.kind === "wallRect" && hasRectangleShape(rectangle));
-  const touchToleranceWorld = positiveFinite(options.touchToleranceWorld, 1.5);
-  const overlapToleranceWorld = nonNegativeFinite(options.overlapToleranceWorld, 1e-3);
-  const metersPerWorldUnit = positiveFiniteOrNull(plan?.scale?.metersPerWorldUnit);
+function appendMirroredCrossRoomSegments({
+  sharedBoundaries,
+  roomSideById,
+  segments,
+  candidateSegments,
+  metersPerWorldUnit,
+  overlapToleranceWorld
+}) {
+  for (const boundary of sharedBoundaries) {
+    if (boundary.sameRoom) {
+      continue;
+    }
 
-  const roomSides = buildRoomSides(roomRectangles, wallRectangles, {
+    if (boundary.a.supportsOverlap && !boundary.b.supportsOverlap) {
+      appendMirroredSegment(boundary.b.sideId, boundary, "a");
+    }
+    if (boundary.b.supportsOverlap && !boundary.a.supportsOverlap) {
+      appendMirroredSegment(boundary.a.sideId, boundary, "b");
+    }
+  }
+
+  function appendMirroredSegment(targetSideId, boundary, sourceLabel) {
+    const targetSide = roomSideById.get(targetSideId);
+    if (!targetSide) {
+      return;
+    }
+
+    const segment = createRoomSideSegment(
+      targetSide,
+      boundary.overlapStart,
+      boundary.overlapEnd,
+      metersPerWorldUnit,
+      `${targetSide.id}:mirror:${sourceLabel}`,
+      "neighborWall"
+    );
+    if (!segment) {
+      return;
+    }
+    if (containsEquivalentSegment(candidateSegments, segment, overlapToleranceWorld)) {
+      return;
+    }
+
+    candidateSegments.push(segment);
+    segments.push(segment);
+  }
+}
+
+function containsEquivalentSegment(segments, candidate, overlapToleranceWorld) {
+  for (const segment of segments) {
+    if (segment.sourceSideId !== candidate.sourceSideId) {
+      continue;
+    }
+    if (
+      approximatelyEqual(segment.x0, candidate.x0, overlapToleranceWorld) &&
+      approximatelyEqual(segment.y0, candidate.y0, overlapToleranceWorld) &&
+      approximatelyEqual(segment.x1, candidate.x1, overlapToleranceWorld) &&
+      approximatelyEqual(segment.y1, candidate.y1, overlapToleranceWorld)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function deriveRoomWallContactModel(plan, options = {}) {
+  const decomposition = deriveRoomWallDecomposition(plan, options);
+  const {
+    roomSides: decomposedRoomSides,
+    wallRectangles,
+    roomRectangleCount,
+    wallRectangleCount,
+    metersPerWorldUnit,
     touchToleranceWorld,
-    overlapToleranceWorld,
-    metersPerWorldUnit
-  });
-  const supportedRoomSides = applyNeighborWallSupport(roomSides, touchToleranceWorld, overlapToleranceWorld);
+    overlapToleranceWorld
+  } = decomposition;
+
+  const roomSidesWithDirectSupport = buildRoomSidesWithDirectSupport(
+    decomposedRoomSides,
+    wallRectangles,
+    touchToleranceWorld,
+    overlapToleranceWorld
+  );
+  const neighborSupportedSides = applyNeighborWallSupport(roomSidesWithDirectSupport, touchToleranceWorld, overlapToleranceWorld);
+  const supportedRoomSides = applyBoundarySupportInheritance(
+    neighborSupportedSides,
+    touchToleranceWorld,
+    overlapToleranceWorld
+  );
   const sharedBoundaries = deriveSharedBoundaries(supportedRoomSides, touchToleranceWorld, overlapToleranceWorld);
   const sharedBoundaryRefsBySideId = indexSharedBoundaryRefsBySideId(sharedBoundaries);
   const unsupportedOpenSides = deriveUnsupportedOpenSides(
@@ -112,13 +213,14 @@ export function deriveRoomWallContactModel(plan, options = {}) {
     overlapToleranceWorld,
     metersPerWorldUnit
   );
+
   return {
     roomSides: supportedRoomSides,
     roomWallContacts: buildRoomWallContacts(supportedRoomSides, metersPerWorldUnit),
     sharedBoundaries,
     unsupportedOpenSides,
-    roomRectangleCount: roomRectangles.length,
-    wallRectangleCount: wallRectangles.length,
+    roomRectangleCount,
+    wallRectangleCount,
     metersPerWorldUnit,
     touchToleranceWorld,
     overlapToleranceWorld
@@ -138,7 +240,7 @@ function buildRoomWallContacts(roomSides, metersPerWorldUnit) {
       const contactId = side.supportIntervals.length > 1
         ? `${side.id}:support:${supportIndex + 1}`
         : side.id;
-      const contactSegment = createSegmentFromSideInterval(
+      const contactSegment = createRoomSideSegment(
         side,
         supportInterval.start,
         supportInterval.end,
@@ -155,56 +257,30 @@ function buildRoomWallContacts(roomSides, metersPerWorldUnit) {
   return contacts;
 }
 
-function buildRoomSides(roomRectangles, wallRectangles, options) {
-  const roomSides = [];
-  const metersPerWorldUnit = options.metersPerWorldUnit;
+function buildRoomSidesWithDirectSupport(roomSides, wallRectangles, touchToleranceWorld, overlapToleranceWorld) {
+  return roomSides.map((side) => {
+    const wallRectSupportIntervals = getWallRectSupportIntervals(
+      side,
+      wallRectangles,
+      touchToleranceWorld,
+      overlapToleranceWorld
+    );
+    const hasWallRectSupport = wallRectSupportIntervals.length > 0;
+    const hasWallCmSupport = side.hasWallCm;
+    const supportIntervals = hasWallCmSupport
+      ? [{ start: side.intervalStart, end: side.intervalEnd }]
+      : wallRectSupportIntervals;
 
-  for (const rectangle of roomRectangles) {
-    const wallCm = normalizeWallCm(rectangle.wallCm);
-    const sideSpecs = getRectangleSideSpecs(rectangle);
-
-    for (const sideSpec of sideSpecs) {
-      const sideWallCm = wallCm[sideSpec.side];
-      const sideWallWorld = wallCentimetersToWorld(sideWallCm, metersPerWorldUnit);
-      const wallRectSupportIntervals = getWallRectSupportIntervals(
-        rectangle,
-        sideSpec.side,
-        wallRectangles,
-        options.touchToleranceWorld,
-        options.overlapToleranceWorld
-      );
-      const wallRectContact = wallRectSupportIntervals.length > 0;
-      const hasWallCmSupport = sideWallCm > 0;
-      const supportIntervals = hasWallCmSupport
-        ? [{ start: sideSpec.intervalStart, end: sideSpec.intervalEnd }]
-        : wallRectSupportIntervals;
-      const hasWallSupport = supportIntervals.length > 0;
-
-      roomSides.push({
-        id: `${rectangle.id}:${sideSpec.side}`,
-        rectangleId: rectangle.id,
-        roomId: typeof rectangle.roomId === "string" ? rectangle.roomId : null,
-        side: sideSpec.side,
-        axis: sideSpec.axis,
-        intervalStart: sideSpec.intervalStart,
-        intervalEnd: sideSpec.intervalEnd,
-        coordinateInterior: sideSpec.coordinate,
-        coordinateOuter: offsetCoordinateForSide(sideSpec.side, sideSpec.coordinate, sideWallWorld),
-        wallSource: resolveWallSource(sideWallCm > 0, wallRectContact),
-        hasWallCmSupport,
-        hasWallRectSupport: wallRectContact,
-        supportIntervals,
-        hasWallSupport,
-        lengthWorld: sideSpec.lengthWorld,
-        x0: sideSpec.x0,
-        y0: sideSpec.y0,
-        x1: sideSpec.x1,
-        y1: sideSpec.y1
-      });
-    }
-  }
-
-  return roomSides;
+    return {
+      ...side,
+      hasWallCmSupport,
+      hasWallRectSupport,
+      hasNeighborSupport: false,
+      supportIntervals,
+      hasWallSupport: supportIntervals.length > 0,
+      wallSource: resolveWallSource(hasWallCmSupport, hasWallRectSupport)
+    };
+  });
 }
 
 function applyNeighborWallSupport(roomSides, touchToleranceWorld, overlapToleranceWorld) {
@@ -268,7 +344,69 @@ function applyNeighborWallSupport(roomSides, touchToleranceWorld, overlapToleran
   return propagatedSides;
 }
 
+function applyBoundarySupportInheritance(roomSides, touchToleranceWorld, overlapToleranceWorld) {
+  const sidesById = new Map(
+    roomSides.map((side) => [
+      side.id,
+      {
+        ...side,
+        supportIntervals: [...side.supportIntervals]
+      }
+    ])
+  );
+
+  const boundaries = deriveSharedBoundaries([...sidesById.values()], touchToleranceWorld, overlapToleranceWorld);
+  for (const boundary of boundaries) {
+    if (boundary.sameRoom) {
+      continue;
+    }
+    inheritBoundarySupport(boundary.a.sideId, boundary.b.sideId, boundary);
+    inheritBoundarySupport(boundary.b.sideId, boundary.a.sideId, boundary);
+  }
+
+  return [...sidesById.values()];
+
+  function inheritBoundarySupport(targetSideId, sourceSideId, boundary) {
+    const targetSide = sidesById.get(targetSideId);
+    const sourceSide = sidesById.get(sourceSideId);
+    if (!targetSide || !sourceSide) {
+      return;
+    }
+    if (targetSide.hasWallSupport || !sourceSide.hasWallSupport) {
+      return;
+    }
+    if (!doesSideSupportInterval(sourceSide, boundary.overlapStart, boundary.overlapEnd, overlapToleranceWorld)) {
+      return;
+    }
+
+    const inheritedOverlap = makeInterval(boundary.overlapStart, boundary.overlapEnd, overlapToleranceWorld);
+    if (!inheritedOverlap) {
+      return;
+    }
+
+    targetSide.supportIntervals = mergeIntervals(
+      [...targetSide.supportIntervals, inheritedOverlap],
+      overlapToleranceWorld
+    );
+    targetSide.hasWallSupport = true;
+    targetSide.hasNeighborSupport = true;
+    targetSide.wallSource = "neighborWall";
+  }
+}
+
 function touchesNeighborSupportedBoundary(side, neighbor, touchToleranceWorld) {
+  if (
+    neighbor.hasWallCmSupport &&
+    isCoordinateWithinWallBand(
+      side.coordinateInterior,
+      neighbor.coordinateInterior,
+      neighbor.coordinateOuter,
+      touchToleranceWorld
+    )
+  ) {
+    return true;
+  }
+
   const neighborSupportCoordinates = getNeighborSupportCoordinates(neighbor);
   for (const coordinate of neighborSupportCoordinates) {
     if (approximatelyEqual(side.coordinateInterior, coordinate, touchToleranceWorld)) {
@@ -289,57 +427,17 @@ function getNeighborSupportCoordinates(side) {
   return coordinates;
 }
 
-function getRectangleSideSpecs(rectangle) {
-  return [
-    {
-      side: "top",
-      axis: "horizontal",
-      x0: rectangle.x,
-      y0: rectangle.y,
-      x1: rectangle.x + rectangle.w,
-      y1: rectangle.y,
-      coordinate: rectangle.y,
-      intervalStart: rectangle.x,
-      intervalEnd: rectangle.x + rectangle.w,
-      lengthWorld: rectangle.w
-    },
-    {
-      side: "right",
-      axis: "vertical",
-      x0: rectangle.x + rectangle.w,
-      y0: rectangle.y,
-      x1: rectangle.x + rectangle.w,
-      y1: rectangle.y + rectangle.h,
-      coordinate: rectangle.x + rectangle.w,
-      intervalStart: rectangle.y,
-      intervalEnd: rectangle.y + rectangle.h,
-      lengthWorld: rectangle.h
-    },
-    {
-      side: "bottom",
-      axis: "horizontal",
-      x0: rectangle.x,
-      y0: rectangle.y + rectangle.h,
-      x1: rectangle.x + rectangle.w,
-      y1: rectangle.y + rectangle.h,
-      coordinate: rectangle.y + rectangle.h,
-      intervalStart: rectangle.x,
-      intervalEnd: rectangle.x + rectangle.w,
-      lengthWorld: rectangle.w
-    },
-    {
-      side: "left",
-      axis: "vertical",
-      x0: rectangle.x,
-      y0: rectangle.y,
-      x1: rectangle.x,
-      y1: rectangle.y + rectangle.h,
-      coordinate: rectangle.x,
-      intervalStart: rectangle.y,
-      intervalEnd: rectangle.y + rectangle.h,
-      lengthWorld: rectangle.h
-    }
-  ];
+function isCoordinateWithinWallBand(coordinate, wallInteriorCoordinate, wallOuterCoordinate, tolerance) {
+  if (
+    !Number.isFinite(coordinate) ||
+    !Number.isFinite(wallInteriorCoordinate) ||
+    !Number.isFinite(wallOuterCoordinate)
+  ) {
+    return false;
+  }
+  const min = Math.min(wallInteriorCoordinate, wallOuterCoordinate) - tolerance;
+  const max = Math.max(wallInteriorCoordinate, wallOuterCoordinate) + tolerance;
+  return coordinate >= min && coordinate <= max;
 }
 
 function deriveSharedBoundaries(roomSides, touchToleranceWorld, overlapToleranceWorld) {
@@ -426,7 +524,7 @@ function createSharedBoundary(sideA, sideB, overlapStart, overlapEnd, overlapLen
   };
 }
 
-function createSegmentFromSideInterval(
+function createRoomSideSegment(
   side,
   intervalStart,
   intervalEnd,
@@ -505,6 +603,28 @@ function appendPruneInterval(intervalsBySideId, sideId, start, end) {
     intervalsBySideId.set(sideId, []);
   }
   intervalsBySideId.get(sideId).push({ start, end });
+}
+
+function collectCrossRoomSupportIntervalsBySideId(sharedBoundaries, overlapToleranceWorld) {
+  const intervalsBySideId = new Map();
+
+  for (const boundary of sharedBoundaries) {
+    if (boundary.sameRoom) {
+      continue;
+    }
+    if (boundary.b.supportsOverlap) {
+      appendPruneInterval(intervalsBySideId, boundary.a.sideId, boundary.overlapStart, boundary.overlapEnd);
+    }
+    if (boundary.a.supportsOverlap) {
+      appendPruneInterval(intervalsBySideId, boundary.b.sideId, boundary.overlapStart, boundary.overlapEnd);
+    }
+  }
+
+  for (const [sideId, intervals] of intervalsBySideId.entries()) {
+    intervalsBySideId.set(sideId, mergeIntervals(intervals, overlapToleranceWorld));
+  }
+
+  return intervalsBySideId;
 }
 
 function deriveUnsupportedOpenSides(roomSides, sharedBoundaryRefsBySideId, overlapToleranceWorld, metersPerWorldUnit) {
@@ -599,12 +719,11 @@ function subtractIntervals(start, end, intervals, overlapToleranceWorld) {
   return remainder.filter((interval) => interval.end - interval.start > overlapToleranceWorld);
 }
 
-function getWallRectSupportIntervals(roomRectangle, side, wallRectangles, touchToleranceWorld, overlapToleranceWorld) {
+function getWallRectSupportIntervals(side, wallRectangles, touchToleranceWorld, overlapToleranceWorld) {
   const intervals = [];
 
   for (const wallRectangle of wallRectangles) {
     const interval = getWallRectSupportIntervalOnSide(
-      roomRectangle,
       side,
       wallRectangle,
       touchToleranceWorld,
@@ -618,47 +737,47 @@ function getWallRectSupportIntervals(roomRectangle, side, wallRectangles, touchT
   return mergeIntervals(intervals, overlapToleranceWorld);
 }
 
-function getWallRectSupportIntervalOnSide(roomRectangle, side, wallRectangle, touchToleranceWorld, overlapToleranceWorld) {
-  if (side === "top") {
-    if (!approximatelyEqual(wallRectangle.y + wallRectangle.h, roomRectangle.y, touchToleranceWorld)) {
+function getWallRectSupportIntervalOnSide(side, wallRectangle, touchToleranceWorld, overlapToleranceWorld) {
+  if (side.side === "top") {
+    if (!approximatelyEqual(wallRectangle.y + wallRectangle.h, side.coordinateInterior, touchToleranceWorld)) {
       return null;
     }
     return makeInterval(
-      Math.max(roomRectangle.x, wallRectangle.x),
-      Math.min(roomRectangle.x + roomRectangle.w, wallRectangle.x + wallRectangle.w),
+      Math.max(side.intervalStart, wallRectangle.x),
+      Math.min(side.intervalEnd, wallRectangle.x + wallRectangle.w),
       overlapToleranceWorld
     );
   }
 
-  if (side === "right") {
-    if (!approximatelyEqual(wallRectangle.x, roomRectangle.x + roomRectangle.w, touchToleranceWorld)) {
+  if (side.side === "right") {
+    if (!approximatelyEqual(wallRectangle.x, side.coordinateInterior, touchToleranceWorld)) {
       return null;
     }
     return makeInterval(
-      Math.max(roomRectangle.y, wallRectangle.y),
-      Math.min(roomRectangle.y + roomRectangle.h, wallRectangle.y + wallRectangle.h),
+      Math.max(side.intervalStart, wallRectangle.y),
+      Math.min(side.intervalEnd, wallRectangle.y + wallRectangle.h),
       overlapToleranceWorld
     );
   }
 
-  if (side === "bottom") {
-    if (!approximatelyEqual(wallRectangle.y, roomRectangle.y + roomRectangle.h, touchToleranceWorld)) {
+  if (side.side === "bottom") {
+    if (!approximatelyEqual(wallRectangle.y, side.coordinateInterior, touchToleranceWorld)) {
       return null;
     }
     return makeInterval(
-      Math.max(roomRectangle.x, wallRectangle.x),
-      Math.min(roomRectangle.x + roomRectangle.w, wallRectangle.x + wallRectangle.w),
+      Math.max(side.intervalStart, wallRectangle.x),
+      Math.min(side.intervalEnd, wallRectangle.x + wallRectangle.w),
       overlapToleranceWorld
     );
   }
 
-  if (side === "left") {
-    if (!approximatelyEqual(wallRectangle.x + wallRectangle.w, roomRectangle.x, touchToleranceWorld)) {
+  if (side.side === "left") {
+    if (!approximatelyEqual(wallRectangle.x + wallRectangle.w, side.coordinateInterior, touchToleranceWorld)) {
       return null;
     }
     return makeInterval(
-      Math.max(roomRectangle.y, wallRectangle.y),
-      Math.min(roomRectangle.y + roomRectangle.h, wallRectangle.y + wallRectangle.h),
+      Math.max(side.intervalStart, wallRectangle.y),
+      Math.min(side.intervalEnd, wallRectangle.y + wallRectangle.h),
       overlapToleranceWorld
     );
   }
@@ -739,14 +858,14 @@ function createOpenSideSegment(side, intervalStart, intervalEnd, metersPerWorldU
   };
 }
 
-function resolveWallSource(hasWallCm, hasWallRectContact) {
-  if (hasWallCm && hasWallRectContact) {
+function resolveWallSource(hasWallCmSupport, hasWallRectSupport) {
+  if (hasWallCmSupport && hasWallRectSupport) {
     return "wallCm+wallRect";
   }
-  if (hasWallCm) {
+  if (hasWallCmSupport) {
     return "wallCm";
   }
-  if (hasWallRectContact) {
+  if (hasWallRectSupport) {
     return "wallRect";
   }
   return "none";
@@ -768,30 +887,8 @@ function resolveSupportWallSource(side) {
   return side.wallSource ?? "none";
 }
 
-function offsetCoordinateForSide(side, coordinate, wallWorld) {
-  if (side === "top" || side === "left") {
-    return coordinate - wallWorld;
-  }
-  if (side === "right" || side === "bottom") {
-    return coordinate + wallWorld;
-  }
-  return coordinate;
-}
-
 function sumSegmentLength(segments) {
   return segments.reduce((sum, segment) => sum + (segment?.lengthWorld ?? 0), 0);
-}
-
-function hasRectangleShape(value) {
-  return (
-    value != null &&
-    Number.isFinite(value.x) &&
-    Number.isFinite(value.y) &&
-    Number.isFinite(value.w) &&
-    Number.isFinite(value.h) &&
-    value.w > 0 &&
-    value.h > 0
-  );
 }
 
 function makeInterval(start, end, overlapToleranceWorld) {
@@ -814,16 +911,4 @@ function approximatelyEqual(a, b, epsilon) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function positiveFinite(value, fallback) {
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function nonNegativeFinite(value, fallback) {
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function positiveFiniteOrNull(value) {
-  return Number.isFinite(value) && value > 0 ? value : null;
 }

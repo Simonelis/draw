@@ -28,12 +28,11 @@ Introduce an explicit intermediate room-wall contact model so baseboard logic op
 
 ## Implementation notes
 
-- Added `deriveRoomWallContactModel(plan)` in `app/src/editor/geometry/baseboards.js`.
-- `deriveBaseboardCandidates(plan)` now consumes normalized model output.
-- Neighbor wall inheritance was fixed to check both neighbor interior and shell support boundaries.
-- Added tests in `app/tests/specs/baseboards.test.js`:
-  - neighbor support via wall shell
-  - normalized contact model output check
+- Added decomposition module `app/src/editor/geometry/room-wall-topology.js` (room/wall split + room-side geometry only).
+- Kept support propagation, overlap checks, shared-boundary pruning, and open-side derivation in `app/src/editor/geometry/baseboards.js`.
+- `deriveBaseboardCandidates(plan)` consumes `deriveRoomWallContactModel(plan)` from `baseboards` as the source of truth.
+- Neighbor wall inheritance checks both neighbor interior and shell support boundaries.
+- Added tests in `app/tests/specs/baseboards.test.js` and `app/tests/specs/room-wall-topology.test.js`.
 - Added technical note: `docs/room_wall_contact_model_v1.md`.
 
 ## Log (append-only)

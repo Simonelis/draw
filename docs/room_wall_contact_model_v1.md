@@ -19,7 +19,11 @@ This avoids ad-hoc rectangle pair rules and makes diagnostics explainable.
 
 ## Derived model
 
-`deriveRoomWallContactModel(plan)` returns:
+`deriveRoomWallDecomposition(plan)` in `app/src/editor/geometry/room-wall-topology.js` returns:
+- `roomRectangles[]` and `wallRectangles[]` (shape-valid split)
+- `roomSides[]` (per-side geometry + wallCm shell offsets)
+
+`deriveRoomWallContactModel(plan)` in `app/src/editor/geometry/baseboards.js` derives:
 - `roomSides[]`: normalized per-side records for each room rectangle
   - side geometry (`axis`, interval, interior coordinate)
   - wall support metadata (`hasWallCmSupport`, `hasWallRectSupport`, `hasNeighborSupport`)
@@ -43,6 +47,7 @@ This handles the case: “room side has no wall but touches another rectangle’
 ## Baseboard rule (v1)
 
 Count baseboard candidates from `roomWallContacts[]`, then prune same-room internal seams using shared-boundary overlaps.
+`app/src/editor/geometry/baseboards.js` owns support propagation and overlap arithmetic.
 
 ## Known limits
 

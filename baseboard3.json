@@ -1,0 +1,421 @@
+{
+  "version": 1,
+  "planId": "plan_local_001",
+  "meta": {
+    "name": "Untitled plan",
+    "createdAt": "2026-02-26T13:57:28.316Z",
+    "updatedAt": "2026-02-28T10:41:59.802Z"
+  },
+  "background": {
+    "sourceType": "sample",
+    "source": "apartment1.png",
+    "opacity": 0.5499999999999999,
+    "transform": {
+      "x": 120,
+      "y": 80,
+      "width": 980,
+      "height": 720
+    }
+  },
+  "scale": {
+    "metersPerWorldUnit": 0.0187120344128612,
+    "referenceLine": {
+      "x0": 31.80859375,
+      "y0": 94.796875,
+      "x1": 31.56640625,
+      "y1": 201.6796875,
+      "meters": 2
+    }
+  },
+  "entities": {
+    "rectangles": [
+      {
+        "id": "rect_user_1",
+        "kind": "roomRect",
+        "x": 147.4587000155098,
+        "y": 125.63635774624498,
+        "w": 285.97516250026746,
+        "h": 324.64752361792495,
+        "wallCm": {
+          "top": 0,
+          "right": 17,
+          "bottom": 13,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_2",
+        "kind": "roomRect",
+        "x": 442.5189249012523,
+        "y": 125.63635774624498,
+        "w": 436.5918779528376,
+        "h": 439.2400983687217,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_3",
+        "kind": "roomRect",
+        "x": 879.1108028540899,
+        "y": 151.69705577742246,
+        "w": 25.17054199340123,
+        "h": 156.58373860631366,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_4",
+        "kind": "roomRect",
+        "x": 992.5348058313368,
+        "y": 1415.2431992896875,
+        "w": 276.77163233085844,
+        "h": 414.35554757213595,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_5",
+        "kind": "roomRect",
+        "x": 23.751238359240574,
+        "y": 1333.3974549027516,
+        "w": 621.4007549720963,
+        "h": 569.2091044590718,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_6",
+        "kind": "roomRect",
+        "x": 715.7631735004784,
+        "y": 1415.2431992896875,
+        "w": 276.77163233085844,
+        "h": 154.85355688693585,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_7",
+        "kind": "roomRect",
+        "x": 1222.4735704107225,
+        "y": 914.2794453871645,
+        "w": 365.79598892888566,
+        "h": 103.5872548629161,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_8",
+        "kind": "roomRect",
+        "x": 147.4587000155098,
+        "y": 457.23128201188615,
+        "w": 172.22880020847214,
+        "h": 221.0565439133826,
+        "wallCm": {
+          "top": 0,
+          "right": 21,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": "room_room1",
+        "label": null
+      },
+      {
+        "id": "rect_user_9",
+        "kind": "roomRect",
+        "x": 330.91022434721583,
+        "y": 457.23128201188615,
+        "w": 111.60870055403649,
+        "h": 249.86738012239402,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": "room_room2",
+        "label": null
+      },
+      {
+        "id": "rect_user_10",
+        "kind": "wallRect",
+        "x": 380.0524226719331,
+        "y": 103.30626408178416,
+        "w": 253.55898356318244,
+        "h": 22.33009366446082,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_11",
+        "kind": "wallRect",
+        "x": 121.78698321277275,
+        "y": 104.64091426099753,
+        "w": 25.671716802737052,
+        "h": 623.5464229769339,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_12",
+        "kind": "wallRect",
+        "x": 147.4587000155098,
+        "y": 678.2878259252687,
+        "w": 183.45152433170603,
+        "h": 49.89951131266264,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_13",
+        "kind": "wallRect",
+        "x": 449.4079085835932,
+        "y": 707.0986621342802,
+        "w": 64.9379432142697,
+        "h": 20.166935554807196,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_14",
+        "kind": "roomRect",
+        "x": 525.5685759210968,
+        "y": 572.3582721971226,
+        "w": 352.0179645838663,
+        "h": 207.09750229533313,
+        "wallCm": {
+          "top": 14,
+          "right": 0,
+          "bottom": 36,
+          "left": 21
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_15",
+        "kind": "wallRect",
+        "x": 877.5865405049631,
+        "y": 753.0600275746008,
+        "w": 27.320412447959598,
+        "h": 45.63470255768448,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_16",
+        "kind": "wallRect",
+        "x": 879.1108028540899,
+        "y": 308.2807943837361,
+        "w": 25.17054199340123,
+        "h": 293.9850092786332,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_17",
+        "kind": "roomRect",
+        "x": 442.5189249012523,
+        "y": 564.8764561149667,
+        "w": 71.82692689661059,
+        "h": 142.2222060193135,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_18",
+        "kind": "wallRect",
+        "x": 846.1777216528401,
+        "y": 104.67349476523275,
+        "w": 58.5078125,
+        "h": 20.962862981012236,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_19",
+        "kind": "wallRect",
+        "x": 879.1108028540899,
+        "y": 125.63635774624498,
+        "w": 25.57473129875018,
+        "h": 26.06069803117748,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_20",
+        "kind": "wallRect",
+        "x": 147.4587000155098,
+        "y": 104.64091426099753,
+        "w": 33.4386043770526,
+        "h": 20.99544348524745,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_21",
+        "kind": "roomRect",
+        "x": 877.5865405049631,
+        "y": 602.2658036623693,
+        "w": 26.694804342528073,
+        "h": 150.79422391223147,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_22",
+        "kind": "roomRect",
+        "x": 633.6114062351155,
+        "y": 103.30626408178416,
+        "w": 212.56631541772458,
+        "h": 22.33009366446082,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      },
+      {
+        "id": "rect_user_23",
+        "kind": "roomRect",
+        "x": 180.8973043925624,
+        "y": 104.64091426099753,
+        "w": 199.15511827937067,
+        "h": 20.99544348524745,
+        "wallCm": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "roomId": null,
+        "label": null
+      }
+    ],
+    "openings": [],
+    "rooms": [
+      {
+        "id": "room_room1",
+        "name": "Room1",
+        "roomType": "generic",
+        "rectangleIds": [
+          "rect_user_8"
+        ]
+      },
+      {
+        "id": "room_room2",
+        "name": "Room2",
+        "roomType": "generic",
+        "rectangleIds": [
+          "rect_user_9"
+        ]
+      }
+    ]
+  }
+}

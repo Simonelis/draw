@@ -110,7 +110,10 @@ test("plan reducer setKind updates rectangle kind and clears wallCm for wallRect
     entities: {
       ...base.entities,
       rectangles: [
-        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 120, h: 80, wallCm: { top: 5, right: 7, bottom: 9, left: 11 }, roomId: null, label: null }
+        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 120, h: 80, wallCm: { top: 5, right: 7, bottom: 9, left: 11 }, roomId: "room_a", label: null }
+      ],
+      rooms: [
+        { id: "room_a", name: "Bathroom", roomType: "bathroom", rectangleIds: ["rect_a"] }
       ]
     }
   };
@@ -124,6 +127,8 @@ test("plan reducer setKind updates rectangle kind and clears wallCm for wallRect
   assert(nextPlan !== plan, "setKind should produce a new plan object.");
   assertEqual(nextPlan.entities.rectangles[0].kind, "wallRect");
   assertDeepEqual(nextPlan.entities.rectangles[0].wallCm, { top: 0, right: 0, bottom: 0, left: 0 });
+  assertEqual(nextPlan.entities.rectangles[0].roomId, null);
+  assertEqual(nextPlan.entities.rooms.length, 0);
 });
 
 test("plan reducer setKind no-ops for missing rectangle or invalid kind", () => {
@@ -151,4 +156,88 @@ test("plan reducer setKind no-ops for missing rectangle or invalid kind", () => 
     kind: "diagonalRect"
   });
   assert(invalidKind === plan, "setKind should no-op for invalid kind.");
+});
+
+test("plan reducer room upsert assigns selected rectangle to a room", () => {
+  const base = createEmptyPlan();
+  const plan = {
+    ...base,
+    entities: {
+      ...base.entities,
+      rectangles: [
+        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 100, h: 80, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: null, label: null }
+      ]
+    }
+  };
+
+  const nextPlan = planReducer(plan, {
+    type: "plan/rooms/upsertForRectangle",
+    rectangleId: "rect_a",
+    name: "Bathroom",
+    roomType: "bathroom"
+  });
+
+  assert(nextPlan !== plan, "room upsert should produce a new plan object.");
+  assertEqual(nextPlan.entities.rooms.length, 1);
+  assertEqual(nextPlan.entities.rooms[0].name, "Bathroom");
+  assertEqual(nextPlan.entities.rooms[0].roomType, "bathroom");
+  assertDeepEqual(nextPlan.entities.rooms[0].rectangleIds, ["rect_a"]);
+  assertEqual(nextPlan.entities.rectangles[0].roomId, nextPlan.entities.rooms[0].id);
+});
+
+test("plan reducer room upsert updates existing room and moves rectangle", () => {
+  const base = createEmptyPlan();
+  const plan = {
+    ...base,
+    entities: {
+      ...base.entities,
+      rectangles: [
+        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 90, h: 80, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: "room_old", label: null },
+        { id: "rect_b", kind: "roomRect", x: 100, y: 0, w: 90, h: 80, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: "room_keep", label: null }
+      ],
+      rooms: [
+        { id: "room_old", name: "Old", roomType: "generic", rectangleIds: ["rect_a"] },
+        { id: "room_keep", name: "Living", roomType: "living_room", rectangleIds: ["rect_b"] }
+      ]
+    }
+  };
+
+  const nextPlan = planReducer(plan, {
+    type: "plan/rooms/upsertForRectangle",
+    rectangleId: "rect_a",
+    roomId: "room_keep",
+    name: "Living Area",
+    roomType: "living_room"
+  });
+
+  assertEqual(nextPlan.entities.rooms.length, 1);
+  assertEqual(nextPlan.entities.rooms[0].id, "room_keep");
+  assertEqual(nextPlan.entities.rooms[0].name, "Living Area");
+  assertDeepEqual(nextPlan.entities.rooms[0].rectangleIds, ["rect_b", "rect_a"]);
+  const rectA = nextPlan.entities.rectangles.find((rectangle) => rectangle.id === "rect_a");
+  assertEqual(rectA.roomId, "room_keep");
+});
+
+test("plan reducer room clear removes assignment and prunes empty room", () => {
+  const base = createEmptyPlan();
+  const plan = {
+    ...base,
+    entities: {
+      ...base.entities,
+      rectangles: [
+        { id: "rect_a", kind: "roomRect", x: 0, y: 0, w: 90, h: 80, wallCm: { top: 0, right: 0, bottom: 0, left: 0 }, roomId: "room_a", label: null }
+      ],
+      rooms: [
+        { id: "room_a", name: "Bathroom", roomType: "bathroom", rectangleIds: ["rect_a"] }
+      ]
+    }
+  };
+
+  const nextPlan = planReducer(plan, {
+    type: "plan/rooms/clearForRectangle",
+    rectangleId: "rect_a"
+  });
+
+  assertEqual(nextPlan.entities.rectangles[0].roomId, null);
+  assertEqual(nextPlan.entities.rooms.length, 0);
 });

@@ -116,6 +116,10 @@ body {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 168px;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .toolbar-label {
@@ -167,6 +171,8 @@ body {
   gap: 8px;
   padding: 8px;
   max-width: min(680px, 100%);
+  max-height: 160px;
+  overflow: auto;
 }
 
 .toolbar-disclosure-panel button {
@@ -177,6 +183,40 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(160px, 1fr));
   gap: 8px;
+}
+
+.room-controls-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.room-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.room-field span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.room-field input,
+.room-field select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  padding: 6px 8px;
+  min-width: 0;
+}
+
+.room-field input:disabled,
+.room-field select:disabled {
+  background: #f5f2ec;
 }
 
 .wall-row {
@@ -312,5 +352,9 @@ body {
   .toolbar .status {
     width: 100%;
     margin-left: 0;
+  }
+
+  .toolbar {
+    max-height: 210px;
   }
 }

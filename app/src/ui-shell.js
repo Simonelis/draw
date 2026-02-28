@@ -32,6 +32,11 @@ export function createEditorShell(root) {
   const wallBottomIncreaseButton = root.querySelector("[data-editor-action='wall-bottom-inc']");
   const wallLeftDecreaseButton = root.querySelector("[data-editor-action='wall-left-dec']");
   const wallLeftIncreaseButton = root.querySelector("[data-editor-action='wall-left-inc']");
+  const roomStatusElement = root.querySelector("[data-room-status]");
+  const roomNameInput = root.querySelector("[data-room-input='name']");
+  const roomTypeSelect = root.querySelector("[data-room-input='type']");
+  const roomAssignButton = root.querySelector("[data-editor-action='room-assign']");
+  const roomClearButton = root.querySelector("[data-editor-action='room-clear']");
   const exportJsonButton = root.querySelector("[data-editor-action='plan-export-json']");
   const importJsonButton = root.querySelector("[data-editor-action='plan-import-json']");
   const importJsonFileInput = root.querySelector("[data-editor-file-input='plan-import']");
@@ -76,6 +81,11 @@ export function createEditorShell(root) {
       wallBottomIncreaseButton,
       wallLeftDecreaseButton,
       wallLeftIncreaseButton,
+      roomStatusElement,
+      roomNameInput,
+      roomTypeSelect,
+      roomAssignButton,
+      roomClearButton,
       exportJsonButton,
       importJsonButton,
       importJsonFileInput,
@@ -129,7 +139,7 @@ function buildShell() {
         <button type="button" data-editor-action="tool-calibrate-scale" aria-pressed="false">Calibrate Scale</button>
         <button type="button" data-editor-action="rect-delete" disabled>Delete Rect</button>
         <button type="button" data-editor-action="rect-toggle-kind" aria-pressed="false" disabled>Set As Wall</button>
-        <details class="toolbar-disclosure wall-controls" open>
+        <details class="toolbar-disclosure wall-controls">
           <summary>
             <span class="toolbar-disclosure-title">Wall Cm</span>
             <span class="toolbar-inline-status" data-wall-status>No selection</span>
@@ -159,6 +169,36 @@ function buildShell() {
               <span class="wall-value" data-wall-value="left">-</span>
               <button type="button" data-editor-action="wall-left-inc">+</button>
             </div>
+          </div>
+        </details>
+        <details class="toolbar-disclosure room-controls">
+          <summary>
+            <span class="toolbar-disclosure-title">Room Tag</span>
+            <span class="toolbar-inline-status" data-room-status>No selection</span>
+          </summary>
+          <div class="toolbar-disclosure-panel room-controls-panel">
+            <label class="room-field">
+              <span>Name</span>
+              <input type="text" data-room-input="name" placeholder="Bathroom" maxlength="64">
+            </label>
+            <label class="room-field">
+              <span>Type</span>
+              <select data-room-input="type">
+                <option value="generic">Generic</option>
+                <option value="bathroom">Bathroom</option>
+                <option value="toilet">Toilet</option>
+                <option value="kitchen">Kitchen</option>
+                <option value="living_room">Living Room</option>
+                <option value="bedroom">Bedroom</option>
+                <option value="hallway">Hallway</option>
+                <option value="closet">Closet</option>
+                <option value="storage">Storage</option>
+                <option value="utility">Utility</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <button type="button" data-editor-action="room-assign">Save Room Tag</button>
+            <button type="button" data-editor-action="room-clear">Clear Room Tag</button>
           </div>
         </details>
         <button type="button" data-editor-action="plan-export-json">Export JSON</button>

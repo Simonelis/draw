@@ -227,7 +227,7 @@ function migratePlan(raw) {
     entities: {
       rectangles: normalizeRectangles(entities.rectangles),
       openings: Array.isArray(entities.openings) ? entities.openings.slice() : [],
-      rooms: Array.isArray(entities.rooms) ? entities.rooms.slice() : []
+      rooms: normalizeRooms(entities.rooms)
     }
   };
 }
@@ -295,6 +295,46 @@ function normalizeReferenceLine(rawReferenceLine) {
   }
 
   return { x0, y0, x1, y1, meters };
+}
+
+function normalizeRooms(rawRooms) {
+  if (!Array.isArray(rawRooms)) {
+    return [];
+  }
+
+  const result = [];
+  for (let index = 0; index < rawRooms.length; index += 1) {
+    const rawRoom = rawRooms[index];
+    if (!isPlainObject(rawRoom)) {
+      continue;
+    }
+
+    const id = typeof rawRoom.id === "string" && rawRoom.id ? rawRoom.id : `room_migrated_${index + 1}`;
+    const name = typeof rawRoom.name === "string" && rawRoom.name.trim() ? rawRoom.name.trim() : `Room ${index + 1}`;
+    const roomType = typeof rawRoom.roomType === "string" && rawRoom.roomType.trim()
+      ? rawRoom.roomType.trim()
+      : "generic";
+    const rectangleIds = Array.isArray(rawRoom.rectangleIds)
+      ? Array.from(
+        new Set(
+          rawRoom.rectangleIds.filter((rectangleId) => typeof rectangleId === "string" && rectangleId)
+        )
+      )
+      : [];
+
+    if (rectangleIds.length === 0) {
+      continue;
+    }
+
+    result.push({
+      id,
+      name,
+      roomType,
+      rectangleIds
+    });
+  }
+
+  return result;
 }
 
 function getLocalStorage() {

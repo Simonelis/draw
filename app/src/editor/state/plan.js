@@ -1,4 +1,18 @@
 const PLAN_VERSION = 1;
+const DEFAULT_ROOM_TYPE = "generic";
+const ROOM_TYPE_SET = new Set([
+  "generic",
+  "living_room",
+  "bedroom",
+  "kitchen",
+  "bathroom",
+  "toilet",
+  "hallway",
+  "closet",
+  "storage",
+  "utility",
+  "other"
+]);
 
 export function createEmptyPlan() {
   const now = new Date().toISOString();
@@ -227,14 +241,19 @@ export function planReducer(plan, action) {
       nextRectangles[rectangleIndex] = {
         ...current,
         kind: nextKind,
-        wallCm: nextKind === "wallRect" ? { top: 0, right: 0, bottom: 0, left: 0 } : normalizeWallCm(current.wallCm)
+        wallCm: nextKind === "wallRect" ? { top: 0, right: 0, bottom: 0, left: 0 } : normalizeWallCm(current.wallCm),
+        roomId: nextKind === "wallRect" ? null : current.roomId
       };
+      const nextRooms = nextKind === "wallRect"
+        ? cleanupRoomsAfterRectangleDelete(plan.entities.rooms, current.id)
+        : plan.entities.rooms;
 
       return stampPlan({
         ...plan,
         entities: {
           ...plan.entities,
-          rectangles: nextRectangles
+          rectangles: nextRectangles,
+          rooms: nextRooms
         }
       });
     }
@@ -271,6 +290,101 @@ export function planReducer(plan, action) {
         entities: {
           ...plan.entities,
           rectangles: nextRectangles
+        }
+      });
+    }
+
+    case "plan/rooms/upsertForRectangle": {
+      const rectangleIndex = plan.entities.rectangles.findIndex((rectangle) => rectangle.id === action.rectangleId);
+      if (rectangleIndex < 0) {
+        return plan;
+      }
+
+      const rectangle = plan.entities.rectangles[rectangleIndex];
+      if (rectangle.kind === "wallRect") {
+        return plan;
+      }
+
+      const roomName = normalizeRoomName(action.name);
+      if (!roomName) {
+        return plan;
+      }
+
+      const requestedRoomId = normalizeNonEmptyString(action.roomId);
+      const fallbackRoomId = normalizeNonEmptyString(rectangle.roomId);
+      const requestedRoomType = normalizeRoomType(action.roomType);
+      const detachedRooms = detachRectangleFromRooms(plan.entities.rooms, rectangle.id);
+      const targetRoomId = requestedRoomId ?? fallbackRoomId;
+
+      let nextRooms = detachedRooms;
+      let targetRoom = targetRoomId ? nextRooms.find((room) => room.id === targetRoomId) ?? null : null;
+
+      if (!targetRoom) {
+        const generatedId = targetRoomId ?? generateRoomId(nextRooms, roomName);
+        targetRoom = {
+          id: generatedId,
+          name: roomName,
+          roomType: requestedRoomType,
+          rectangleIds: []
+        };
+        nextRooms = [...nextRooms, targetRoom];
+      }
+
+      const nextRectangles = plan.entities.rectangles.slice();
+      nextRectangles[rectangleIndex] = {
+        ...rectangle,
+        roomId: targetRoom.id
+      };
+
+      const nextRoomsWithAssignment = nextRooms.map((room) => {
+        if (room.id !== targetRoom.id) {
+          return room;
+        }
+        const rectangleIds = room.rectangleIds.includes(rectangle.id)
+          ? room.rectangleIds
+          : [...room.rectangleIds, rectangle.id];
+        return {
+          ...room,
+          name: roomName,
+          roomType: requestedRoomType,
+          rectangleIds
+        };
+      });
+
+      return stampPlan({
+        ...plan,
+        entities: {
+          ...plan.entities,
+          rectangles: nextRectangles,
+          rooms: nextRoomsWithAssignment
+        }
+      });
+    }
+
+    case "plan/rooms/clearForRectangle": {
+      const rectangleIndex = plan.entities.rectangles.findIndex((rectangle) => rectangle.id === action.rectangleId);
+      if (rectangleIndex < 0) {
+        return plan;
+      }
+
+      const rectangle = plan.entities.rectangles[rectangleIndex];
+      if (!rectangle.roomId) {
+        return plan;
+      }
+
+      const nextRectangles = plan.entities.rectangles.slice();
+      nextRectangles[rectangleIndex] = {
+        ...rectangle,
+        roomId: null
+      };
+      const nextRooms = detachRectangleFromRooms(plan.entities.rooms, rectangle.id);
+
+      return stampPlan({
+        ...plan,
+        entities: {
+          ...plan.entities,
+          rectangles: nextRectangles,
+          rooms: nextRooms
         }
       });
     }
@@ -393,14 +507,21 @@ function clampNumber(value, min, max, fallback) {
 }
 
 function cleanupRoomsAfterRectangleDelete(rooms, deletedRectangleId) {
+  return detachRectangleFromRooms(rooms, deletedRectangleId);
+}
+
+function detachRectangleFromRooms(rooms, rectangleId) {
   if (!Array.isArray(rooms) || rooms.length === 0) {
     return [];
   }
 
   const nextRooms = [];
   for (const room of rooms) {
+    if (!room || typeof room !== "object") {
+      continue;
+    }
     const rectangleIds = Array.isArray(room.rectangleIds)
-      ? room.rectangleIds.filter((rectangleId) => rectangleId !== deletedRectangleId)
+      ? room.rectangleIds.filter((roomRectangleId) => roomRectangleId !== rectangleId)
       : [];
 
     if (rectangleIds.length === 0) {
@@ -414,6 +535,31 @@ function cleanupRoomsAfterRectangleDelete(rooms, deletedRectangleId) {
   }
 
   return nextRooms;
+}
+
+function generateRoomId(rooms, roomName) {
+  const baseId = roomName
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_")
+    .replaceAll(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const seed = baseId ? `room_${baseId}` : "room";
+  const existing = new Set(
+    Array.isArray(rooms)
+      ? rooms
+        .filter((room) => room && typeof room.id === "string")
+        .map((room) => room.id)
+      : []
+  );
+  if (!existing.has(seed)) {
+    return seed;
+  }
+  let suffix = 2;
+  while (existing.has(`${seed}_${suffix}`)) {
+    suffix += 1;
+  }
+  return `${seed}_${suffix}`;
 }
 
 function cleanupOpeningsAfterRectangleDelete(openings, deletedRectangleId) {
@@ -493,6 +639,33 @@ function normalizeWallSide(side) {
     return side;
   }
   return null;
+}
+
+function normalizeRoomType(roomType) {
+  if (typeof roomType !== "string") {
+    return DEFAULT_ROOM_TYPE;
+  }
+  const normalized = roomType.trim().toLowerCase().replaceAll("-", "_").replaceAll(/\s+/g, "_");
+  return ROOM_TYPE_SET.has(normalized) ? normalized : DEFAULT_ROOM_TYPE;
+}
+
+function normalizeRoomName(name) {
+  if (typeof name !== "string") {
+    return null;
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeNonEmptyString(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function normalizeRectangleKind(kind) {

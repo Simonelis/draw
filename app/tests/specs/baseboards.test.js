@@ -1,4 +1,4 @@
-import { deriveBaseboardCandidates, deriveRoomWallContactModel } from "../../src/editor/geometry/baseboards.js";
+import { deriveBaseboardCandidates } from "../../src/editor/geometry/baseboards.js";
 import { assert, assertClose, assertEqual, test } from "../test-runner.js";
 
 function createPlan(rectangles, metersPerWorldUnit = 0.01) {
@@ -218,36 +218,79 @@ test("room side inherits support from touching neighbor wallCm shell", () => {
   assertClose(roomARightSegments[0].lengthWorld, 80);
 });
 
-test("room-wall contact model exposes normalized contact segments", () => {
+test("room side inherits support when positioned inside neighboring wall band", () => {
   const plan = createPlan([
     {
-      id: "room_a",
+      id: "room_with_wall",
       kind: "roomRect",
       x: 0,
       y: 0,
-      w: 120,
+      w: 100,
       h: 80,
-      wallCm: { top: 0, right: 0, bottom: 0, left: 0 },
-      roomId: "room_a"
+      wallCm: { top: 0, right: 10, bottom: 0, left: 0 },
+      roomId: "room_with_wall"
     },
     {
-      id: "room_b",
+      id: "room_without_wall",
       kind: "roomRect",
-      x: 120,
+      x: 108,
       y: 0,
       w: 100,
       h: 80,
-      wallCm: { top: 0, right: 0, bottom: 0, left: 10 },
-      roomId: "room_b"
+      wallCm: { top: 0, right: 0, bottom: 0, left: 0 },
+      roomId: "room_without_wall"
     }
   ]);
 
-  const model = deriveRoomWallContactModel(plan);
-  const inheritedContacts = model.roomWallContacts.filter(
-    (segment) => segment.rectangleId === "room_a" && segment.side === "right"
+  const result = deriveBaseboardCandidates(plan);
+  const inheritedSegments = result.segments.filter(
+    (segment) => segment.rectangleId === "room_without_wall" && segment.side === "left"
+  );
+  const unsupportedLeft = result.unsupportedOpenSides.filter(
+    (segment) => segment.rectangleId === "room_without_wall" && segment.side === "left"
   );
 
-  assertEqual(inheritedContacts.length, 1);
-  assertEqual(inheritedContacts[0].wallSource, "neighborWall");
-  assertClose(inheritedContacts[0].lengthWorld, 80);
+  assertEqual(inheritedSegments.length, 1);
+  assertEqual(inheritedSegments[0].wallSource, "neighborWall");
+  assertClose(inheritedSegments[0].lengthWorld, 80);
+  assertEqual(unsupportedLeft.length, 0);
+});
+
+test("baseboard exists between room_room1 and room_room2 from exported plan geometry", () => {
+  const plan = createPlan(
+    [
+      {
+        id: "rect_user_8",
+        kind: "roomRect",
+        x: 147.4587000155098,
+        y: 457.23128201188615,
+        w: 172.22880020847214,
+        h: 221.0565439133826,
+        wallCm: { top: 0, right: 21, bottom: 0, left: 0 },
+        roomId: "room_room1"
+      },
+      {
+        id: "rect_user_9",
+        kind: "roomRect",
+        x: 330.91022434721583,
+        y: 457.23128201188615,
+        w: 111.60870055403649,
+        h: 249.86738012239402,
+        wallCm: { top: 0, right: 0, bottom: 0, left: 0 },
+        roomId: "room_room2"
+      }
+    ],
+    0.0187120344128612
+  );
+
+  const result = deriveBaseboardCandidates(plan);
+  const room2LeftSegments = result.segments.filter(
+    (segment) => segment.rectangleId === "rect_user_9" && segment.side === "left"
+  );
+
+  assertEqual(room2LeftSegments.length, 1);
+  assertEqual(room2LeftSegments[0].wallSource, "neighborWall");
+  assertClose(room2LeftSegments[0].x0, 330.91022434721583);
+  assertClose(room2LeftSegments[0].y0, 457.23128201188615);
+  assertClose(room2LeftSegments[0].y1, 678.2878259252687);
 });

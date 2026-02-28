@@ -44,6 +44,7 @@ const BACKGROUND_SCALE_DOWN = 1 / BACKGROUND_SCALE_UP;
 const SNAP_TOLERANCE_PX = 10;
 const MIN_CALIBRATION_LINE_WORLD = 8;
 const WALL_CM_STEP = 1;
+const DEFAULT_ROOM_TYPE = "generic";
 const OVERLAP_FLASH_PAIR_DURATION_MS = 1100;
 const OVERLAP_FLASH_BLINK_PERIOD_MS = 320;
 
@@ -589,6 +590,28 @@ export function mountEditorRuntime(options) {
     });
   }
 
+  if (controls.roomAssignButton) {
+    controls.roomAssignButton.addEventListener("click", () => {
+      assignSelectedRectangleRoomTag();
+    });
+  }
+
+  if (controls.roomClearButton) {
+    controls.roomClearButton.addEventListener("click", () => {
+      clearSelectedRectangleRoomTag();
+    });
+  }
+
+  if (controls.roomNameInput) {
+    controls.roomNameInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+      event.preventDefault();
+      assignSelectedRectangleRoomTag();
+    });
+  }
+
   if (controls.backgroundOpacityDownButton) {
     controls.backgroundOpacityDownButton.addEventListener("click", () => {
       const { plan } = store.getState();
@@ -888,6 +911,7 @@ export function mountEditorRuntime(options) {
       const selectedDimsLabel = formatSelectedRectangleDimensionsStatus(selectedRectangle, plan.scale);
       const selectedWallLabel = formatSelectedRectangleWallCmStatus(selectedRectangle);
       const selectedKindLabel = formatSelectedRectangleKindStatus(selectedRectangle);
+      const selectedRoomLabel = formatSelectedRectangleRoomTagStatus(selectedRectangle, plan);
       const validationLabel = formatValidationSummaryStatus(validation);
       const overlapFlashLabel = formatValidationOverlapFlashStatus(validation, timestamp);
       const baseboardLabel = formatBaseboardSummaryStatus(baseboard, showBaseboardOverlay);
@@ -896,7 +920,7 @@ export function mountEditorRuntime(options) {
         `T-0019 baseboard v0 | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | overlap ${overlapFlashLabel} | ${baseboardLabel} | file ${fileIoLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | ` +
-        `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedKindLabel ? ` (${selectedKindLabel})` : ""}${selectedDimsLabel ? ` ${selectedDimsLabel}` : ""}${selectedWallLabel ? ` [${selectedWallLabel}]` : ""} | ` +
+        `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedKindLabel ? ` (${selectedKindLabel})` : ""}${selectedDimsLabel ? ` ${selectedDimsLabel}` : ""}${selectedWallLabel ? ` [${selectedWallLabel}]` : ""}${selectedRoomLabel ? ` {${selectedRoomLabel}}` : ""} | ` +
         `fps ~${fps.toFixed(0)}`;
     }
 
@@ -910,6 +934,7 @@ export function mountEditorRuntime(options) {
         `${formatScaleDetail(plan.scale)}. Use Calibrate Scale tool to draw a reference line and enter meters.<br>` +
         `Baseboard candidates: ${formatBaseboardSummaryOverlay(baseboard, showBaseboardOverlay)}.<br>` +
         `Selected kind: ${formatSelectedRectangleKindOverlay(selectedRectangle)}.<br>` +
+        `Selected room tag: ${formatSelectedRectangleRoomTagOverlay(selectedRectangle, plan)}.<br>` +
         `Selected dimensions: ${formatSelectedRectangleDimensionsOverlay(selectedRectangle, plan.scale)}.<br>` +
         `Selected wall cm: ${formatSelectedRectangleWallCmOverlay(selectedRectangle)}.<br>` +
         `Validation: ${formatValidationDetail(validation)}.<br>` +
@@ -974,6 +999,7 @@ export function mountEditorRuntime(options) {
         : "Set As Wall";
     }
     syncWallControls(snapshot.plan, state);
+    syncRoomControls(snapshot.plan, state);
     if (controls.backgroundStatusElement) {
       controls.backgroundStatusElement.textContent = formatBackgroundShort(snapshot.plan.background, backgroundImageState);
     }
@@ -1202,6 +1228,86 @@ export function mountEditorRuntime(options) {
       if (button) {
         button.disabled = !wallEditingEnabled;
       }
+    }
+  }
+
+  function assignSelectedRectangleRoomTag() {
+    const snapshot = store.getState();
+    const selectedRectangle = getSelectedRectangle(snapshot.plan, snapshot.editorState);
+    if (!selectedRectangle || selectedRectangle.kind === "wallRect") {
+      return false;
+    }
+
+    const roomName = controls.roomNameInput ? controls.roomNameInput.value.trim() : "";
+    if (!roomName) {
+      window.alert("Room name is required.");
+      return false;
+    }
+
+    const roomType = controls.roomTypeSelect ? controls.roomTypeSelect.value : DEFAULT_ROOM_TYPE;
+    store.dispatch({
+      type: "plan/rooms/upsertForRectangle",
+      rectangleId: selectedRectangle.id,
+      roomId: selectedRectangle.roomId,
+      name: roomName,
+      roomType
+    });
+    return true;
+  }
+
+  function clearSelectedRectangleRoomTag() {
+    const snapshot = store.getState();
+    const selectedRectangle = getSelectedRectangle(snapshot.plan, snapshot.editorState);
+    if (!selectedRectangle || !selectedRectangle.roomId) {
+      return false;
+    }
+
+    store.dispatch({
+      type: "plan/rooms/clearForRectangle",
+      rectangleId: selectedRectangle.id
+    });
+    return true;
+  }
+
+  function syncRoomControls(plan, editorState) {
+    const selectedRectangle = getSelectedRectangle(plan, editorState);
+    const room = getRoomForRectangle(plan, selectedRectangle);
+    const canEditRoom = Boolean(selectedRectangle) && selectedRectangle.kind !== "wallRect";
+    const roomType = normalizeRoomTypeForUi(room?.roomType);
+    const roomName = room?.name ?? "";
+
+    if (controls.roomStatusElement) {
+      if (!selectedRectangle) {
+        controls.roomStatusElement.textContent = "No selection";
+      } else if (selectedRectangle.kind === "wallRect") {
+        controls.roomStatusElement.textContent = "Wall rect selected";
+      } else if (room) {
+        controls.roomStatusElement.textContent = `${room.name} (${formatRoomTypeLabel(room.roomType)})`;
+      } else {
+        controls.roomStatusElement.textContent = "Unassigned";
+      }
+    }
+
+    if (controls.roomNameInput) {
+      controls.roomNameInput.disabled = !canEditRoom;
+      if (document.activeElement !== controls.roomNameInput) {
+        controls.roomNameInput.value = canEditRoom ? roomName : "";
+      }
+    }
+
+    if (controls.roomTypeSelect) {
+      controls.roomTypeSelect.disabled = !canEditRoom;
+      if (document.activeElement !== controls.roomTypeSelect) {
+        controls.roomTypeSelect.value = roomType;
+      }
+    }
+
+    if (controls.roomAssignButton) {
+      controls.roomAssignButton.disabled = !canEditRoom;
+    }
+
+    if (controls.roomClearButton) {
+      controls.roomClearButton.disabled = !canEditRoom || !room;
     }
   }
 
@@ -1450,6 +1556,31 @@ function formatSelectedRectangleKindOverlay(rectangle) {
   return rectangle.kind === "wallRect" ? "wallRect (whole wall primitive)" : "roomRect (room interior)";
 }
 
+function formatSelectedRectangleRoomTagStatus(rectangle, plan) {
+  if (!rectangle || rectangle.kind === "wallRect") {
+    return "";
+  }
+  const room = getRoomForRectangle(plan, rectangle);
+  if (!room) {
+    return "room:unassigned";
+  }
+  return `room:${room.name}/${formatRoomTypeLabel(room.roomType)}`;
+}
+
+function formatSelectedRectangleRoomTagOverlay(rectangle, plan) {
+  if (!rectangle) {
+    return "none";
+  }
+  if (rectangle.kind === "wallRect") {
+    return "n/a for wallRect";
+  }
+  const room = getRoomForRectangle(plan, rectangle);
+  if (!room) {
+    return "unassigned";
+  }
+  return `${escapeHtmlForOverlay(room.name)} (${formatRoomTypeLabel(room.roomType)}) [${room.id}]`;
+}
+
 function formatSelectedRectangleWallCmStatus(rectangle) {
   if (!rectangle) {
     return "";
@@ -1695,6 +1826,52 @@ function normalizeWallCmForUi(rawWallCm) {
     bottom: normalizeWallSideValue(wallCm.bottom),
     left: normalizeWallSideValue(wallCm.left)
   };
+}
+
+function formatRoomTypeLabel(roomType) {
+  switch (roomType) {
+    case "living_room":
+      return "living room";
+    case "bedroom":
+      return "bedroom";
+    case "kitchen":
+      return "kitchen";
+    case "bathroom":
+      return "bathroom";
+    case "toilet":
+      return "toilet";
+    case "hallway":
+      return "hallway";
+    case "closet":
+      return "closet";
+    case "storage":
+      return "storage";
+    case "utility":
+      return "utility";
+    case "other":
+      return "other";
+    default:
+      return "generic";
+  }
+}
+
+function normalizeRoomTypeForUi(roomType) {
+  switch (roomType) {
+    case "living_room":
+    case "bedroom":
+    case "kitchen":
+    case "bathroom":
+    case "toilet":
+    case "hallway":
+    case "closet":
+    case "storage":
+    case "utility":
+    case "other":
+    case "generic":
+      return roomType;
+    default:
+      return DEFAULT_ROOM_TYPE;
+  }
 }
 
 function normalizeWallSideValue(value) {
@@ -2002,6 +2179,15 @@ function getSelectedRectangle(plan, editorState) {
     return null;
   }
   return plan.entities.rectangles.find((rectangle) => rectangle.id === selectedId) ?? null;
+}
+
+function getRoomForRectangle(plan, rectangle) {
+  const roomId = rectangle?.roomId;
+  if (typeof roomId !== "string" || !roomId) {
+    return null;
+  }
+  const rooms = Array.isArray(plan?.entities?.rooms) ? plan.entities.rooms : [];
+  return rooms.find((room) => room?.id === roomId) ?? null;
 }
 
 function isBaseboardOverlayEnabled(editorState) {
