@@ -157,6 +157,7 @@ export function mountEditorRuntime(options) {
     const point = toCanvasLocalPoint(canvas, event.clientX, event.clientY);
     const state = store.getState();
     const { editorState, plan } = state;
+    const geometryFrozen = isGeometryEditingFrozen(editorState);
     const worldPoint = screenToWorld(editorState.camera, point.x, point.y);
     const selectedRectangle = getSelectedRectangle(plan, editorState);
     const fixtureHit = hitTestLightingFixtures(plan, worldPoint, editorState.camera.zoom);
@@ -174,6 +175,10 @@ export function mountEditorRuntime(options) {
     }
 
     if (editorState.tool === "drawRect") {
+      if (geometryFrozen) {
+        syncEditorChrome();
+        return;
+      }
       store.dispatch({ type: "editor/selection/clear" });
       store.dispatch({ type: "editor/lightingSelection/clearFixture" });
       canvas.setPointerCapture(event.pointerId);
@@ -241,6 +246,10 @@ export function mountEditorRuntime(options) {
     }
 
     if (editorState.tool === "mergeRoom") {
+      if (geometryFrozen) {
+        syncEditorChrome();
+        return;
+      }
       const hit = hitTestRectangles(plan.entities.rectangles, worldPoint, {
         getBounds: (rectangle) => getRectangleHitBounds(rectangle, plan.scale)
       });
@@ -291,6 +300,10 @@ export function mountEditorRuntime(options) {
         handleSizePx: HANDLE_SIZE_PX
       });
       if (handleHit) {
+        if (geometryFrozen) {
+          syncEditorChrome();
+          return;
+        }
         const lockedSides = lockedSeamSides.get(selectedRectangle.id);
         const handleBlockedByLockedSeam = isResizeHandleBlockedByLockedSides(handleHit.name, lockedSides);
         let seamSlideDescriptor = null;
@@ -324,14 +337,17 @@ export function mountEditorRuntime(options) {
       getBounds: (rectangle) => getRectangleHitBounds(rectangle, plan.scale)
     });
     if (hit) {
-      const dragOffset = computeRectangleDragOffset(hit.rectangle, worldPoint);
-
       store.dispatch({ type: "editor/lightingSelection/clearFixture" });
       store.dispatch({
         type: "editor/selection/set",
         rectangleId: hit.rectangle.id
       });
       syncRoomSelectionFromRectangle(hit.rectangle);
+      if (geometryFrozen) {
+        syncEditorChrome();
+        return;
+      }
+      const dragOffset = computeRectangleDragOffset(hit.rectangle, worldPoint);
       canvas.setPointerCapture(event.pointerId);
       store.dispatch({
         type: "editor/interaction/rectDragStart",
@@ -396,6 +412,11 @@ export function mountEditorRuntime(options) {
       state.editorState.interaction.pointerId === event.pointerId &&
       state.editorState.interaction.dragRectangle
     ) {
+      if (isGeometryEditingFrozen(state.editorState)) {
+        store.dispatch({ type: "editor/interaction/end", pointerId: event.pointerId });
+        syncEditorChrome();
+        return;
+      }
       const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
       const dragRectangle = state.editorState.interaction.dragRectangle;
       const nextPosition = computeRectanglePositionFromPointer(worldPoint, {
@@ -586,6 +607,11 @@ export function mountEditorRuntime(options) {
       state.editorState.interaction.pointerId === event.pointerId &&
       state.editorState.interaction.drawRectDraft
     ) {
+      if (isGeometryEditingFrozen(state.editorState)) {
+        store.dispatch({ type: "editor/interaction/end", pointerId: event.pointerId });
+        syncEditorChrome();
+        return;
+      }
       const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
       store.dispatch({
         type: "editor/interaction/drawRectMove",
@@ -620,6 +646,11 @@ export function mountEditorRuntime(options) {
       state.editorState.interaction.pointerId === event.pointerId &&
       state.editorState.interaction.resizeRectangle
     ) {
+      if (isGeometryEditingFrozen(state.editorState)) {
+        store.dispatch({ type: "editor/interaction/end", pointerId: event.pointerId });
+        syncEditorChrome();
+        return;
+      }
       const worldPoint = screenToWorld(state.editorState.camera, point.x, point.y);
       const resizeState = state.editorState.interaction.resizeRectangle;
       if (resizeState.seamSlide) {
@@ -841,6 +872,21 @@ export function mountEditorRuntime(options) {
   if (controls.toolMergeRoomButton) {
     controls.toolMergeRoomButton.addEventListener("click", () => {
       store.dispatch({ type: "editor/tool/set", tool: "mergeRoom" });
+    });
+  }
+
+  if (controls.geometryFreezeToggleButton) {
+    controls.geometryFreezeToggleButton.addEventListener("click", () => {
+      store.dispatch({ type: "editor/locks/toggleGeometryFreeze" });
+      const nextState = store.getState().editorState;
+      if (isGeometryEditingFrozen(nextState)) {
+        if (nextState.tool === "drawRect" || nextState.tool === "mergeRoom") {
+          store.dispatch({ type: "editor/tool/set", tool: "navigate" });
+        }
+        store.dispatch({ type: "editor/interaction/end", pointerId: null });
+        store.dispatch({ type: "editor/merge/clear" });
+      }
+      syncEditorChrome();
     });
   }
 
@@ -1406,6 +1452,7 @@ export function mountEditorRuntime(options) {
         ? editorState.mergeSelection.rectangleIds.length
         : 0;
       const internalSlideMode = isInternalSeamSlideAdjustEnabled(editorState) ? "slides:on" : "slides:off";
+      const geometryLockMode = isGeometryEditingFrozen(editorState) ? "geom:frozen" : "geom:live";
       const activeRoomId = deriveEffectiveActiveRoomId(plan, editorState);
       const selectedFixture = getSelectedLightingFixture(plan, editorState);
       const lightingTotals = computeLightingTotals(plan);
@@ -1415,7 +1462,7 @@ export function mountEditorRuntime(options) {
       statusElement.textContent =
         `T-0032 lighting v1 | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | overlap ${overlapFlashLabel} | ${baseboardLabel} | lights s:${lightingTotals.switchCount} l:${lightingTotals.lampCount} lk:${lightingTotals.linkCount} sel:${selectedFixtureLabel} | file ${fileIoLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
-        `zoom ${camera.zoom.toFixed(2)}x | merge ${mergeSelectionCount} ${internalSlideMode} | active-room ${activeRoomId ?? "none"} | ` +
+        `zoom ${camera.zoom.toFixed(2)}x | merge ${mergeSelectionCount} ${internalSlideMode} | ${geometryLockMode} | active-room ${activeRoomId ?? "none"} | ` +
         `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedKindLabel ? ` (${selectedKindLabel})` : ""}${selectedDimsLabel ? ` ${selectedDimsLabel}` : ""}${selectedWallLabel ? ` [${selectedWallLabel}]` : ""}${selectedRoomLabel ? ` {${selectedRoomLabel}}` : ""} | ` +
         `fps ~${fps.toFixed(0)}`;
     }
@@ -1437,6 +1484,7 @@ export function mountEditorRuntime(options) {
         `Validation: ${formatValidationDetail(validation)}.<br>` +
         `Overlap flash: ${formatValidationOverlapFlashOverlay(validation, timestamp)}.<br>` +
         `File I/O: ${formatFileTransferStatusDetail(fileTransferStatus)}.<br>` +
+        `Geometry lock: ${isGeometryEditingFrozen(editorState) ? "ON (rectangles cannot move/resize/change kind)" : "OFF"}.<br>` +
         `Lighting quick use: double-click a switch in Navigate to toggle linked lamps; drag to move switch/lamp.<br>` +
         `Link mode: click switch (source), click lamps to link/unlink, then Confirm Linking. Unplug Selected removes links for selected lamp/switch.<br>` +
         `Merge tool: select touching room rectangles, then Complete Merge. Merged room drag moves as one group; internal seams lock unless Internal Slides is enabled.<br>` +
@@ -1492,6 +1540,7 @@ export function mountEditorRuntime(options) {
   function syncEditorChrome() {
     const snapshot = store.getState();
     const state = snapshot.editorState;
+    const geometryFrozen = isGeometryEditingFrozen(state);
     const mode = state.interaction.mode;
     if (shellElement) {
       shellElement.dataset.panMode = mode;
@@ -1502,12 +1551,20 @@ export function mountEditorRuntime(options) {
     }
     if (controls.toolDrawRectButton) {
       controls.toolDrawRectButton.setAttribute("aria-pressed", state.tool === "drawRect" ? "true" : "false");
+      controls.toolDrawRectButton.disabled = geometryFrozen;
     }
     if (controls.toolCalibrateScaleButton) {
       controls.toolCalibrateScaleButton.setAttribute("aria-pressed", state.tool === "calibrateScale" ? "true" : "false");
     }
     if (controls.toolMergeRoomButton) {
       controls.toolMergeRoomButton.setAttribute("aria-pressed", state.tool === "mergeRoom" ? "true" : "false");
+      controls.toolMergeRoomButton.disabled = geometryFrozen;
+    }
+    if (controls.geometryFreezeToggleButton) {
+      controls.geometryFreezeToggleButton.setAttribute("aria-pressed", geometryFrozen ? "true" : "false");
+      controls.geometryFreezeToggleButton.textContent = geometryFrozen
+        ? "Freeze Geometry: On"
+        : "Freeze Geometry: Off";
     }
     if (controls.toolPlaceSwitchButton) {
       controls.toolPlaceSwitchButton.setAttribute("aria-pressed", state.tool === "placeSwitch" ? "true" : "false");
@@ -1532,7 +1589,7 @@ export function mountEditorRuntime(options) {
       );
     }
     if (controls.deleteSelectedButton) {
-      controls.deleteSelectedButton.disabled = state.selection.rectangleId == null;
+      controls.deleteSelectedButton.disabled = state.selection.rectangleId == null || geometryFrozen;
     }
     if (controls.deleteSelectedFixtureButton) {
       controls.deleteSelectedFixtureButton.disabled = !getSelectedLightingFixture(snapshot.plan, state);
@@ -1540,7 +1597,7 @@ export function mountEditorRuntime(options) {
     if (controls.rectangleKindToggleButton) {
       const selectedRectangle = getSelectedRectangle(snapshot.plan, state);
       const isWallRect = selectedRectangle?.kind === "wallRect";
-      controls.rectangleKindToggleButton.disabled = !selectedRectangle;
+      controls.rectangleKindToggleButton.disabled = !selectedRectangle || geometryFrozen;
       controls.rectangleKindToggleButton.setAttribute("aria-pressed", isWallRect ? "true" : "false");
       controls.rectangleKindToggleButton.textContent = selectedRectangle
         ? (isWallRect ? "Set As Room" : "Set As Wall")
@@ -1681,6 +1738,9 @@ export function mountEditorRuntime(options) {
 
   function deleteSelectedRectangle() {
     const state = store.getState();
+    if (isGeometryEditingFrozen(state.editorState)) {
+      return false;
+    }
     const selectedRectangleId = state.editorState.selection.rectangleId;
     if (!selectedRectangleId) {
       return false;
@@ -2031,6 +2091,9 @@ export function mountEditorRuntime(options) {
 
   function adjustSelectedRectangleWallCm(side, delta) {
     const snapshot = store.getState();
+    if (isGeometryEditingFrozen(snapshot.editorState)) {
+      return false;
+    }
     const selectedRectangle = getSelectedRectangle(snapshot.plan, snapshot.editorState);
     if (!selectedRectangle) {
       return false;
@@ -2061,6 +2124,9 @@ export function mountEditorRuntime(options) {
 
   function toggleSelectedRectangleKind() {
     const snapshot = store.getState();
+    if (isGeometryEditingFrozen(snapshot.editorState)) {
+      return false;
+    }
     const selectedRectangle = getSelectedRectangle(snapshot.plan, snapshot.editorState);
     if (!selectedRectangle) {
       return false;
@@ -2079,7 +2145,9 @@ export function mountEditorRuntime(options) {
     const selectedRectangle = getSelectedRectangle(plan, editorState);
     const wallCm = normalizeWallCmForUi(selectedRectangle?.wallCm);
     const hasSelection = Boolean(selectedRectangle);
-    const wallEditingEnabled = hasSelection && selectedRectangle.kind !== "wallRect";
+    const wallEditingEnabled = hasSelection &&
+      selectedRectangle.kind !== "wallRect" &&
+      !isGeometryEditingFrozen(editorState);
 
     if (controls.wallStatusElement) {
       controls.wallStatusElement.textContent = hasSelection
@@ -2158,6 +2226,9 @@ export function mountEditorRuntime(options) {
 
   function completeMergeSelection() {
     const snapshot = store.getState();
+    if (isGeometryEditingFrozen(snapshot.editorState)) {
+      return false;
+    }
     const mergeState = getMergeCompletionState(snapshot.plan, snapshot.editorState);
     if (!mergeState.canComplete) {
       return false;
@@ -2201,6 +2272,9 @@ export function mountEditorRuntime(options) {
 
   function dissolveSelectedRectangleRoom() {
     const snapshot = store.getState();
+    if (isGeometryEditingFrozen(snapshot.editorState)) {
+      return false;
+    }
     const selectedRectangle = getSelectedRectangle(snapshot.plan, snapshot.editorState);
     if (!selectedRectangle || typeof selectedRectangle.roomId !== "string" || !selectedRectangle.roomId) {
       return false;
@@ -2286,6 +2360,10 @@ export function mountEditorRuntime(options) {
   }
 
   function applyRectangleGeometryUpdates(plan, rectangleUpdates, options = {}) {
+    const snapshot = store.getState();
+    if (isGeometryEditingFrozen(snapshot.editorState)) {
+      return false;
+    }
     const normalizedUpdates = normalizeRectangleGeometryUpdates(plan.entities.rectangles, rectangleUpdates);
     if (normalizedUpdates.length === 0) {
       return false;
@@ -2359,11 +2437,14 @@ export function mountEditorRuntime(options) {
   function syncMergeControls(plan, editorState) {
     const mergeState = getMergeCompletionState(plan, editorState);
     const mergeMode = editorState.tool === "mergeRoom";
+    const geometryFrozen = isGeometryEditingFrozen(editorState);
     const selectedRectangle = getSelectedRectangle(plan, editorState);
     const selectedRoom = getRoomForRectangle(plan, selectedRectangle);
 
     if (controls.mergeStatusElement) {
-      if (mergeState.selectedCount > 0 || mergeState.hasInvalidSelection) {
+      if (geometryFrozen) {
+        controls.mergeStatusElement.textContent = "Geometry frozen";
+      } else if (mergeState.selectedCount > 0 || mergeState.hasInvalidSelection) {
         controls.mergeStatusElement.textContent = `${mergeState.selectedCount} selected (${mergeState.statusLabel})`;
       } else if (mergeMode) {
         controls.mergeStatusElement.textContent = "Select touching room rectangles";
@@ -2373,7 +2454,7 @@ export function mountEditorRuntime(options) {
     }
 
     if (controls.roomMergeCompleteButton) {
-      controls.roomMergeCompleteButton.disabled = !mergeState.canComplete;
+      controls.roomMergeCompleteButton.disabled = geometryFrozen || !mergeState.canComplete;
     }
 
     if (controls.roomMergeCancelButton) {
@@ -2381,7 +2462,7 @@ export function mountEditorRuntime(options) {
     }
 
     if (controls.roomDissolveButton) {
-      controls.roomDissolveButton.disabled = !selectedRoom;
+      controls.roomDissolveButton.disabled = geometryFrozen || !selectedRoom;
     }
   }
 
@@ -3921,6 +4002,10 @@ function normalizeRectangleIdForUi(rectangleId) {
 
 function isInternalSeamSlideAdjustEnabled(editorState) {
   return Boolean(editorState?.mergeOptions?.allowInternalSeamAdjust);
+}
+
+function isGeometryEditingFrozen(editorState) {
+  return Boolean(editorState?.editLocks?.geometryFrozen);
 }
 
 function deriveInternalSeamSlideStartDescriptor(plan, rectangleId, handleName) {

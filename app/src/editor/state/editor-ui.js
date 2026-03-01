@@ -37,6 +37,9 @@ export function createInitialEditorState() {
     mergeOptions: {
       allowInternalSeamAdjust: false
     },
+    editLocks: {
+      geometryFrozen: false
+    },
     debug: {
       showBaseboardOverlay: false
     },
@@ -121,6 +124,15 @@ export function editorUiReducer(state, action) {
         mergeOptions: {
           ...state.mergeOptions,
           allowInternalSeamAdjust: !Boolean(state.mergeOptions?.allowInternalSeamAdjust)
+        }
+      };
+
+    case "editor/locks/toggleGeometryFreeze":
+      return {
+        ...state,
+        editLocks: {
+          ...state.editLocks,
+          geometryFrozen: !Boolean(state.editLocks?.geometryFrozen)
         }
       };
 

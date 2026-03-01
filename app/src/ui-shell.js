@@ -19,6 +19,7 @@ export function createEditorShell(root) {
   const toolCalibrateScaleButton = root.querySelector("[data-editor-action='tool-calibrate-scale']");
   const calibrateScaleByAreaButton = root.querySelector("[data-editor-action='scale-calibrate-area']");
   const toolMergeRoomButton = root.querySelector("[data-editor-action='tool-merge-room']");
+  const geometryFreezeToggleButton = root.querySelector("[data-editor-action='geometry-freeze-toggle']");
   const toolPlaceSwitchButton = root.querySelector("[data-editor-action='tool-place-switch']");
   const toolPlaceLampButton = root.querySelector("[data-editor-action='tool-place-lamp']");
   const toolLinkLightingButton = root.querySelector("[data-editor-action='tool-link-lighting']");
@@ -91,6 +92,7 @@ export function createEditorShell(root) {
       toolCalibrateScaleButton,
       calibrateScaleByAreaButton,
       toolMergeRoomButton,
+      geometryFreezeToggleButton,
       toolPlaceSwitchButton,
       toolPlaceLampButton,
       toolLinkLightingButton,
@@ -175,6 +177,7 @@ function buildShell() {
         <button type="button" data-editor-action="tool-calibrate-scale" aria-pressed="false">Calibrate Scale</button>
         <button type="button" data-editor-action="scale-calibrate-area" disabled>Calibrate by Area</button>
         <button type="button" data-editor-action="tool-merge-room" aria-pressed="false">Merge Room</button>
+        <button type="button" data-editor-action="geometry-freeze-toggle" aria-pressed="false">Freeze Geometry: Off</button>
         <button type="button" data-editor-action="tool-place-switch" aria-pressed="false">Place Switch</button>
         <button type="button" data-editor-action="tool-place-lamp" aria-pressed="false">Place Lamp</button>
         <button type="button" data-editor-action="tool-link-lighting" aria-pressed="false">Link Lights</button>
