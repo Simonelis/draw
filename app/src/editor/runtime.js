@@ -1067,7 +1067,7 @@ export function mountEditorRuntime(options) {
       if (!roomId) {
         return;
       }
-      if (event.detail <= 1) {
+      if (target.closest(".room-tree-fold[data-room-item-id]")) {
         if (roomTreeOpenIds.has(roomId)) {
           roomTreeOpenIds.delete(roomId);
         } else {
@@ -2487,6 +2487,13 @@ export function mountEditorRuntime(options) {
           summary.className = "room-tree-summary";
           summary.dataset.roomItemId = roomEntry.id;
 
+          const foldButton = document.createElement("button");
+          foldButton.type = "button";
+          foldButton.className = "room-tree-fold";
+          foldButton.dataset.roomItemId = roomEntry.id;
+          foldButton.textContent = item.open ? "▾" : "▸";
+          foldButton.setAttribute("aria-label", item.open ? "Collapse room details" : "Expand room details");
+
           const swatch = document.createElement("span");
           swatch.className = "room-list-swatch";
           swatch.style.background = roomColor(roomEntry.id, 0.9);
@@ -2510,7 +2517,7 @@ export function mountEditorRuntime(options) {
             meta.textContent += "s";
           }
 
-          summary.append(swatch, main, meta);
+          summary.append(foldButton, swatch, main, meta);
 
           const body = document.createElement("div");
           body.className = "room-tree-body";

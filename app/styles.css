@@ -42,6 +42,10 @@ body {
   gap: 12px;
 }
 
+.shell > * {
+  min-height: 0;
+}
+
 .panel {
   background: color-mix(in srgb, var(--paper) 92%, white);
   border: 1px solid var(--line);
@@ -103,8 +107,8 @@ body {
 }
 
 .rooms-sidebar {
-  display: grid;
-  grid-template-rows: auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
   overflow: auto;
@@ -133,7 +137,7 @@ body {
   border-radius: 10px;
   background: #fff;
   padding: 8px;
-  min-height: 0;
+  min-height: auto;
   overflow: visible;
   display: grid;
   gap: 6px;
@@ -155,7 +159,7 @@ body {
 
 .room-tree-summary {
   display: grid;
-  grid-template-columns: 12px 10px 1fr auto;
+  grid-template-columns: 14px 10px 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -168,15 +172,16 @@ body {
   display: none;
 }
 
-.room-tree-summary::before {
-  content: "▸";
+.room-tree-fold {
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1;
-}
-
-.room-tree-item[open] > .room-tree-summary::before {
-  content: "▾";
+  padding: 0;
+  width: 14px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .room-tree-item:hover,
@@ -230,28 +235,32 @@ body {
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.35;
+  min-width: 0;
 }
 
 .room-tree-meta {
   font-size: 0.76rem;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .room-package,
 .room-subpackage {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: color-mix(in srgb, #fff 92%, var(--paper));
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 88%, #9f998e);
+  border-radius: 0;
+  background: transparent;
 }
 
 .room-package > summary,
 .room-subpackage > summary {
   cursor: pointer;
   list-style: none;
-  padding: 6px 8px;
+  padding: 6px 2px 6px 16px;
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 600;
+  position: relative;
 }
 
 .room-package > summary::-webkit-details-marker,
@@ -259,11 +268,30 @@ body {
   display: none;
 }
 
+.room-package > summary::before,
+.room-subpackage > summary::before {
+  content: "+";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.room-package[open] > summary::before,
+.room-subpackage[open] > summary::before {
+  content: "−";
+}
+
 .room-package-body {
-  padding: 0 8px 8px;
+  padding: 0 2px 8px 12px;
+  border-left: 1px dashed color-mix(in srgb, var(--line) 82%, transparent);
+  margin-left: 4px;
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .room-lines {
@@ -271,11 +299,17 @@ body {
   padding-left: 16px;
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.room-lines li {
+  overflow-wrap: anywhere;
 }
 
 .room-inline-note {
   margin-bottom: 6px;
   font-size: 0.74rem;
+  overflow-wrap: anywhere;
 }
 
 .editor-frame {
