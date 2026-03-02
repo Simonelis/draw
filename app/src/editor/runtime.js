@@ -58,6 +58,14 @@ const OVERLAP_FLASH_BLINK_PERIOD_MS = 320;
 const FIXTURE_HIT_RADIUS_PX = 14;
 const FIXTURE_SWITCH_RADIUS_WORLD = 10;
 const FIXTURE_LAMP_RADIUS_WORLD = 8;
+const ESTIMATE_CURRENCY_SYMBOL = "€";
+const ESTIMATE_DEFAULT_RATES = Object.freeze({
+  baseboardPerM: 18,
+  flooringPerM2: 28,
+  paintingPerM2: 9,
+  switchEach: 22,
+  lampEach: 16
+});
 
 export function mountEditorRuntime(options) {
   const { canvas, statusElement, overlayElement, shellElement, controls = {} } = options;
@@ -123,7 +131,8 @@ export function mountEditorRuntime(options) {
   let lastLockedSeamSides = null;
   let nextUserRectangleId = deriveNextUserRectangleId(store.getState().plan);
   let nextUserFixtureId = deriveNextUserFixtureId(store.getState().plan);
-  let nextUserLightingGroupId = deriveNextUserLightingGroupId(store.getState().plan);
+  const roomTreeOpenIds = new Set();
+  let estimatePanelOpen = false;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -831,12 +840,10 @@ export function mountEditorRuntime(options) {
       store.dispatch({ type: "editor/selection/clear" });
       store.dispatch({ type: "editor/lightingSelection/clearFixture" });
       store.dispatch({ type: "editor/lightingLink/clearSwitch" });
-      store.dispatch({ type: "editor/lightingSelection/clearGroup" });
       store.dispatch({ type: "editor/lightingPreview/clear" });
       store.dispatch({ type: "editor/interaction/end", pointerId: null });
       nextUserRectangleId = deriveNextUserRectangleId(nextPlan);
       nextUserFixtureId = deriveNextUserFixtureId(nextPlan);
-      nextUserLightingGroupId = deriveNextUserLightingGroupId(nextPlan);
     });
   }
 
@@ -909,6 +916,19 @@ export function mountEditorRuntime(options) {
     });
   }
 
+  if (controls.estimateToggleButton) {
+    controls.estimateToggleButton.addEventListener("click", () => {
+      estimatePanelOpen = !estimatePanelOpen;
+      syncEditorChrome();
+    });
+  }
+
+  if (controls.estimatePrintButton) {
+    controls.estimatePrintButton.addEventListener("click", () => {
+      window.print();
+    });
+  }
+
   if (controls.baseboardDebugToggleButton) {
     controls.baseboardDebugToggleButton.addEventListener("click", () => {
       store.dispatch({ type: "editor/debug/toggleBaseboardOverlay" });
@@ -933,50 +953,10 @@ export function mountEditorRuntime(options) {
     });
   }
 
-  if (controls.confirmLightingLinksButton) {
-    controls.confirmLightingLinksButton.addEventListener("click", () => {
-      confirmLightingLinkingSession();
-    });
-  }
-
   if (controls.clearLightingLinkSourceButton) {
     controls.clearLightingLinkSourceButton.addEventListener("click", () => {
       store.dispatch({ type: "editor/lightingLink/clearSwitch" });
       syncEditorChrome();
-    });
-  }
-
-  if (controls.lightingGroupSelect) {
-    controls.lightingGroupSelect.addEventListener("change", (event) => {
-      const target = event.currentTarget;
-      if (!(target instanceof HTMLSelectElement)) {
-        return;
-      }
-      const groupId = normalizeRectangleIdForUi(target.value);
-      if (groupId) {
-        store.dispatch({ type: "editor/lightingSelection/setGroup", groupId });
-      } else {
-        store.dispatch({ type: "editor/lightingSelection/clearGroup" });
-      }
-      syncEditorChrome();
-    });
-  }
-
-  if (controls.lightingCreateGroupButton) {
-    controls.lightingCreateGroupButton.addEventListener("click", () => {
-      createGroupFromActiveRoomLamps();
-    });
-  }
-
-  if (controls.lightingDeleteGroupButton) {
-    controls.lightingDeleteGroupButton.addEventListener("click", () => {
-      deleteSelectedLightingGroup();
-    });
-  }
-
-  if (controls.lightingToggleGroupLinkButton) {
-    controls.lightingToggleGroupLinkButton.addEventListener("click", () => {
-      toggleLightingSwitchLinkToSelectedGroup();
     });
   }
 
@@ -1079,11 +1059,22 @@ export function mountEditorRuntime(options) {
       if (!(target instanceof HTMLElement)) {
         return;
       }
-      const item = target.closest("[data-room-item-id]");
-      if (!(item instanceof HTMLElement)) {
+      const summary = target.closest(".room-tree-summary[data-room-item-id]");
+      if (!(summary instanceof HTMLElement)) {
         return;
       }
-      const roomId = item.dataset.roomItemId;
+      const roomId = summary.dataset.roomItemId;
+      if (!roomId) {
+        return;
+      }
+      if (event.detail <= 1) {
+        if (roomTreeOpenIds.has(roomId)) {
+          roomTreeOpenIds.delete(roomId);
+        } else {
+          roomTreeOpenIds.add(roomId);
+        }
+      }
+      event.preventDefault();
       activateRoomFromSidebar(roomId, { center: false });
     });
 
@@ -1092,11 +1083,11 @@ export function mountEditorRuntime(options) {
       if (!(target instanceof HTMLElement)) {
         return;
       }
-      const item = target.closest("[data-room-item-id]");
-      if (!(item instanceof HTMLElement)) {
+      const summary = target.closest(".room-tree-summary[data-room-item-id]");
+      if (!(summary instanceof HTMLElement)) {
         return;
       }
-      const roomId = item.dataset.roomItemId;
+      const roomId = summary.dataset.roomItemId;
       activateRoomFromSidebar(roomId, { center: true });
     });
   }
@@ -1185,13 +1176,11 @@ export function mountEditorRuntime(options) {
       store.dispatch({ type: "editor/selection/clear" });
       store.dispatch({ type: "editor/lightingSelection/clearFixture" });
       store.dispatch({ type: "editor/lightingLink/clearSwitch" });
-      store.dispatch({ type: "editor/lightingSelection/clearGroup" });
       store.dispatch({ type: "editor/lightingPreview/clear" });
       store.dispatch({ type: "editor/interaction/end", pointerId: null });
       store.dispatch({ type: "editor/tool/set", tool: "navigate" });
       nextUserRectangleId = deriveNextUserRectangleId(importedPlan);
       nextUserFixtureId = deriveNextUserFixtureId(importedPlan);
-      nextUserLightingGroupId = deriveNextUserLightingGroupId(importedPlan);
       autosaveController.flushNow("import");
 
       setFileTransferStatus({
@@ -1487,7 +1476,7 @@ export function mountEditorRuntime(options) {
         `File I/O: ${formatFileTransferStatusDetail(fileTransferStatus)}.<br>` +
         `Geometry lock: ${isGeometryEditingFrozen(editorState) ? "ON (rectangles cannot move/resize/change kind)" : "OFF"}.<br>` +
         `Lighting quick use: double-click a switch in Navigate to toggle linked lamps; drag to move switch/lamp.<br>` +
-        `Link mode: click switch (source), click lamps to link/unlink, then Confirm Linking. Unplug Selected removes links for selected lamp/switch.<br>` +
+        `Link mode: click switch (source), click lamps to link/unlink. Unplug Selected removes links for selected lamp/switch.<br>` +
         `Merge tool: select touching room rectangles, then Complete Merge. Merged room drag moves as one group; internal seams lock unless Internal Slides is enabled.<br>` +
         `Drag/resize snaps within ${SNAP_TOLERANCE_PX}px. Delete uses toolbar button or Delete/Backspace.<br>` +
         `Autosave/load still active: ${describeLoadSource(persistenceStatus.loadSource)}; ${formatAutosaveStatusDetail(persistenceStatus)}.`;
@@ -1615,7 +1604,9 @@ export function mountEditorRuntime(options) {
     if (controls.scaleStatusElement) {
       controls.scaleStatusElement.textContent = formatScaleToolbarStatus(snapshot.plan.scale);
     }
-    syncRoomsSidebar(snapshot.plan, state, getBaseboardResult(snapshot.plan));
+    const baseboardResult = getBaseboardResult(snapshot.plan);
+    syncRoomsSidebar(snapshot.plan, state, baseboardResult);
+    syncEstimatePanel(snapshot.plan, baseboardResult);
   }
 
   function ensureBackgroundImageLoaded(background) {
@@ -1776,19 +1767,6 @@ export function mountEditorRuntime(options) {
     return true;
   }
 
-  function confirmLightingLinkingSession() {
-    const state = store.getState();
-    if (state.editorState.tool !== "linkLighting" && !state.editorState?.lightingSelection?.linkSwitchId) {
-      return false;
-    }
-    store.dispatch({ type: "editor/lightingLink/clearSwitch" });
-    if (state.editorState.tool === "linkLighting") {
-      store.dispatch({ type: "editor/tool/set", tool: "navigate" });
-    }
-    syncEditorChrome();
-    return true;
-  }
-
   function unplugSelectedLightingFixture() {
     const snapshot = store.getState();
     const selectedFixture = getSelectedLightingFixture(snapshot.plan, snapshot.editorState);
@@ -1862,35 +1840,6 @@ export function mountEditorRuntime(options) {
         targetType: "lamp",
         targetId: normalizedLampId
       });
-      changed = true;
-    }
-
-    const groupsWithLamp = lighting.groups.filter((group) => (
-      Array.isArray(group?.fixtureIds) && group.fixtureIds.includes(normalizedLampId)
-    ));
-    for (const group of groupsWithLamp) {
-      const nextFixtureIds = group.fixtureIds.filter((fixtureId) => fixtureId !== normalizedLampId);
-      if (nextFixtureIds.length === group.fixtureIds.length) {
-        continue;
-      }
-      if (nextFixtureIds.length === 0) {
-        store.dispatch({
-          type: "plan/lighting/deleteGroup",
-          groupId: group.id
-        });
-        const selectedGroupId = normalizeRectangleIdForUi(store.getState().editorState?.lightingSelection?.groupId);
-        if (selectedGroupId === group.id) {
-          store.dispatch({ type: "editor/lightingSelection/clearGroup" });
-        }
-      } else {
-        store.dispatch({
-          type: "plan/lighting/updateGroupLamps",
-          groupId: group.id,
-          roomId: group.roomId,
-          name: group.name,
-          fixtureIds: nextFixtureIds
-        });
-      }
       changed = true;
     }
 
@@ -1974,103 +1923,6 @@ export function mountEditorRuntime(options) {
       targetType: "lamp",
       targetId: lampId
     });
-    return true;
-  }
-
-  function createGroupFromActiveRoomLamps() {
-    const snapshot = store.getState();
-    const activeRoom = getActiveRoomEntry(snapshot.plan, snapshot.editorState);
-    const roomId = normalizeRectangleIdForUi(activeRoom?.roomId);
-    if (!roomId) {
-      return false;
-    }
-
-    const lighting = getLightingCollections(snapshot.plan);
-    const lampFixtures = lighting.fixtures.filter((fixture) => fixture?.kind === "lamp" && fixture?.roomId === roomId);
-    const fixtureIds = lampFixtures
-      .map((fixture) => normalizeRectangleIdForUi(fixture?.id))
-      .filter(Boolean);
-    if (fixtureIds.length === 0) {
-      return false;
-    }
-
-    const selectedGroupId = normalizeRectangleIdForUi(snapshot.editorState?.lightingSelection?.groupId);
-    const selectedGroup = selectedGroupId
-      ? lighting.groups.find((group) => group?.id === selectedGroupId && group?.roomId === roomId) ?? null
-      : null;
-    let groupId = selectedGroup?.id ?? null;
-    let groupName = selectedGroup?.name ?? null;
-    if (!groupId) {
-      const nextGroupIndex = nextUserLightingGroupId;
-      groupId = `lg_user_${nextGroupIndex}`;
-      groupName = `Lamp Group ${nextGroupIndex}`;
-      nextUserLightingGroupId += 1;
-    }
-
-    store.dispatch({
-      type: selectedGroup ? "plan/lighting/updateGroupLamps" : "plan/lighting/createGroupFromLamps",
-      groupId,
-      roomId,
-      name: groupName,
-      fixtureIds
-    });
-    store.dispatch({ type: "editor/lightingSelection/setGroup", groupId });
-    ensureLightingSwitchLinkToGroup(groupId, normalizeRectangleIdForUi(snapshot.editorState?.lightingSelection?.linkSwitchId));
-    syncEditorChrome();
-    return true;
-  }
-
-  function deleteSelectedLightingGroup() {
-    const snapshot = store.getState();
-    const groupId = normalizeRectangleIdForUi(snapshot.editorState?.lightingSelection?.groupId);
-    if (!groupId) {
-      return false;
-    }
-    store.dispatch({
-      type: "plan/lighting/deleteGroup",
-      groupId
-    });
-    store.dispatch({ type: "editor/lightingSelection/clearGroup" });
-    syncEditorChrome();
-    return true;
-  }
-
-  function toggleLightingSwitchLinkToSelectedGroup() {
-    const snapshot = store.getState();
-    const switchId = normalizeRectangleIdForUi(snapshot.editorState?.lightingSelection?.linkSwitchId);
-    const groupIdFromState = normalizeRectangleIdForUi(snapshot.editorState?.lightingSelection?.groupId);
-    const groupIdFromControl = normalizeRectangleIdForUi(controls.lightingGroupSelect?.value);
-    const groupId = groupIdFromState ?? groupIdFromControl;
-    if (!switchId || !groupId) {
-      return false;
-    }
-    return ensureLightingSwitchLinkToGroup(groupId, switchId);
-  }
-
-  function ensureLightingSwitchLinkToGroup(groupId, switchId) {
-    const normalizedGroupId = normalizeRectangleIdForUi(groupId);
-    const normalizedSwitchId = normalizeRectangleIdForUi(switchId);
-    if (!normalizedGroupId || !normalizedSwitchId) {
-      return false;
-    }
-    const snapshot = store.getState();
-    const lighting = getLightingCollections(snapshot.plan);
-    const existingLink = lighting.links.find((link) => (
-      link?.switchId === normalizedSwitchId &&
-      link?.targetType === "lampGroup" &&
-      link?.targetId === normalizedGroupId
-    ));
-    if (existingLink) {
-      syncEditorChrome();
-      return true;
-    }
-    store.dispatch({
-      type: "plan/lighting/linkSwitch",
-      switchId: normalizedSwitchId,
-      targetType: "lampGroup",
-      targetId: normalizedGroupId
-    });
-    syncEditorChrome();
     return true;
   }
 
@@ -2468,14 +2320,7 @@ export function mountEditorRuntime(options) {
   }
 
   function syncLightingControls(plan, editorState) {
-    const lighting = getLightingCollections(plan);
-    const activeRoomEntry = getActiveRoomEntry(plan, editorState);
-    const activeRoomId = normalizeRectangleIdForUi(activeRoomEntry?.roomId);
     const selectedFixture = getSelectedLightingFixture(plan, editorState);
-    const selectedGroupId = normalizeRectangleIdForUi(editorState?.lightingSelection?.groupId);
-    const selectedGroup = selectedGroupId
-      ? lighting.groups.find((group) => group?.id === selectedGroupId) ?? null
-      : null;
     const linkSourceSwitchId = normalizeRectangleIdForUi(editorState?.lightingSelection?.linkSwitchId);
     const selectedLinkSource = linkSourceSwitchId
       ? getLightingFixtureById(plan, linkSourceSwitchId)
@@ -2483,69 +2328,16 @@ export function mountEditorRuntime(options) {
     const selectedFixtureLabel = selectedFixture
       ? `${selectedFixture.kind} ${selectedFixture.id}`
       : "No fixture selected";
-    const lampCountInActiveRoom = activeRoomId
-      ? lighting.fixtures.filter((fixture) => fixture?.kind === "lamp" && fixture?.roomId === activeRoomId).length
-      : 0;
-    const visibleGroups = activeRoomId
-      ? lighting.groups.filter((group) => group?.roomId === activeRoomId)
-      : lighting.groups.slice();
-    const selectedGroupStillVisible = selectedGroup ? visibleGroups.some((group) => group.id === selectedGroup.id) : false;
-
     if (controls.lightingStatusElement) {
       let statusLabel = selectedFixtureLabel;
       if (editorState.tool === "linkLighting") {
         if (selectedLinkSource && selectedLinkSource.kind === "switch") {
-          statusLabel = selectedGroup
-            ? `Source ${selectedLinkSource.id}; click lamps to link/unlink or Link Source → Group (${selectedGroup.name})`
-            : `Source ${selectedLinkSource.id}; click lamps to link/unlink`;
+          statusLabel = `Source ${selectedLinkSource.id}; click lamps to link/unlink (links are groups)`;
         } else {
           statusLabel = "Link mode: click a switch first, then click lamps";
         }
       }
       controls.lightingStatusElement.textContent = statusLabel;
-    }
-
-    if (controls.lightingGroupSelect) {
-      const currentValue = normalizeRectangleIdForUi(controls.lightingGroupSelect.value);
-      controls.lightingGroupSelect.replaceChildren();
-      if (visibleGroups.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = activeRoomId ? "No groups in active room" : "No groups";
-        controls.lightingGroupSelect.append(option);
-        controls.lightingGroupSelect.disabled = true;
-      } else {
-        for (const group of visibleGroups) {
-          const lampCount = Array.isArray(group?.fixtureIds) ? group.fixtureIds.length : 0;
-          const option = document.createElement("option");
-          option.value = group.id;
-          option.textContent = `${group.name} (${lampCount})`;
-          controls.lightingGroupSelect.append(option);
-        }
-        controls.lightingGroupSelect.disabled = false;
-        const preferredValue = selectedGroupStillVisible
-          ? selectedGroup.id
-          : (currentValue && visibleGroups.some((group) => group.id === currentValue)
-            ? currentValue
-            : visibleGroups[0].id);
-        controls.lightingGroupSelect.value = preferredValue;
-      }
-    }
-
-    if (controls.lightingCreateGroupButton) {
-      controls.lightingCreateGroupButton.disabled = !(activeRoomId && lampCountInActiveRoom > 0);
-    }
-
-    if (controls.lightingDeleteGroupButton) {
-      controls.lightingDeleteGroupButton.disabled = !selectedGroup;
-    }
-
-    if (controls.lightingToggleGroupLinkButton) {
-      controls.lightingToggleGroupLinkButton.disabled = !(selectedGroup && selectedLinkSource && selectedLinkSource.kind === "switch");
-    }
-
-    if (controls.confirmLightingLinksButton) {
-      controls.confirmLightingLinksButton.disabled = editorState.tool !== "linkLighting";
     }
 
     if (controls.unplugSelectedFixtureButton) {
@@ -2643,12 +2435,18 @@ export function mountEditorRuntime(options) {
   }
 
   function syncRoomsSidebar(plan, editorState, baseboard) {
-    const { roomListElement, roomSummaryElement, roomTotalsElement, roomDetailsElement } = controls;
-    if (!roomListElement && !roomSummaryElement && !roomTotalsElement && !roomDetailsElement) {
+    const { roomListElement, roomSummaryElement, roomTotalsElement } = controls;
+    if (!roomListElement && !roomSummaryElement && !roomTotalsElement) {
       return;
     }
 
     const roomEntries = deriveSidebarRooms(plan);
+    const roomEntryIdSet = new Set(roomEntries.map((entry) => entry.id));
+    for (const openId of Array.from(roomTreeOpenIds)) {
+      if (!roomEntryIdSet.has(openId)) {
+        roomTreeOpenIds.delete(openId);
+      }
+    }
     const effectiveActiveRoomId = deriveEffectiveActiveRoomId(plan, editorState, roomEntries);
     const metersPerWorldUnit = plan.scale?.metersPerWorldUnit;
     const totalMetrics = computeRoomsAggregateMetrics(roomEntries, plan, baseboard, metersPerWorldUnit);
@@ -2658,7 +2456,7 @@ export function mountEditorRuntime(options) {
       const roomCountLabel = `${roomEntries.length} room${roomEntries.length === 1 ? "" : "s"}`;
       roomSummaryElement.textContent = roomEntries.length === 0
         ? "No rooms tagged yet."
-        : `${roomCountLabel} • click to activate • double-click to center`;
+        : `${roomCountLabel} • click room row to select • click arrow to fold`;
     }
 
     if (roomTotalsElement) {
@@ -2677,13 +2475,17 @@ export function mountEditorRuntime(options) {
       } else {
         for (const roomEntry of roomEntries) {
           const roomLighting = computeRoomLightingCounts(roomEntry, plan);
-          const item = document.createElement("button");
-          item.type = "button";
-          item.className = "room-list-item";
+          const item = document.createElement("details");
+          item.className = "room-tree-item";
           if (roomEntry.id === effectiveActiveRoomId) {
             item.classList.add("active");
           }
           item.dataset.roomItemId = roomEntry.id;
+          item.open = roomTreeOpenIds.has(roomEntry.id);
+
+          const summary = document.createElement("summary");
+          summary.className = "room-tree-summary";
+          summary.dataset.roomItemId = roomEntry.id;
 
           const swatch = document.createElement("span");
           swatch.className = "room-list-swatch";
@@ -2708,25 +2510,194 @@ export function mountEditorRuntime(options) {
             meta.textContent += "s";
           }
 
-          item.append(swatch, main, meta);
+          summary.append(swatch, main, meta);
+
+          const body = document.createElement("div");
+          body.className = "room-tree-body";
+          if (item.open) {
+            body.innerHTML = buildRoomInventoryDetailsHtml(
+              roomEntry,
+              plan,
+              baseboard,
+              metersPerWorldUnit
+            );
+          }
+
+          item.append(summary, body);
           roomListElement.append(item);
         }
       }
     }
+  }
 
-    if (roomDetailsElement) {
-      const activeRoom = roomEntries.find((entry) => entry.id === effectiveActiveRoomId) ?? null;
-      if (!activeRoom) {
-        roomDetailsElement.innerHTML = "Select a room to view its area and baseboard totals.";
-      } else {
-        roomDetailsElement.innerHTML = buildRoomInventoryDetailsHtml(
-          activeRoom,
-          plan,
-          baseboard,
-          metersPerWorldUnit
-        );
-      }
+  function syncEstimatePanel(plan, baseboard) {
+    if (controls.estimateToggleButton) {
+      controls.estimateToggleButton.setAttribute("aria-pressed", estimatePanelOpen ? "true" : "false");
+      controls.estimateToggleButton.textContent = estimatePanelOpen
+        ? "Estimate: On"
+        : "Estimate: Off";
     }
+
+    if (controls.estimatePanelElement) {
+      controls.estimatePanelElement.hidden = !estimatePanelOpen;
+    }
+
+    if (!estimatePanelOpen || !controls.estimateBodyElement) {
+      return;
+    }
+
+    controls.estimateBodyElement.innerHTML = buildEstimatePreviewHtml(
+      plan,
+      baseboard,
+      plan.scale?.metersPerWorldUnit
+    );
+  }
+
+  function buildEstimatePreviewHtml(plan, baseboard, metersPerWorldUnit) {
+    const roomEntries = deriveSidebarRooms(plan);
+    if (roomEntries.length === 0) {
+      return `<div class="estimate-empty">No rooms available for estimate.</div>`;
+    }
+
+    let grandTotal = 0;
+    let hasScaledCosts = false;
+    const roomBlocks = roomEntries.map((roomEntry) => {
+      const metrics = computeRoomMetrics(roomEntry, plan, baseboard, metersPerWorldUnit);
+      const painting = deriveRoomPaintingBreakdown(roomEntry, baseboard, metersPerWorldUnit, DEFAULT_PAINT_WALL_HEIGHT_METERS);
+      const roomLighting = computeRoomLightingCounts(roomEntry, plan);
+      const baseboardSegments = deriveRoomBaseboardSegments(roomEntry, baseboard);
+
+      const baseboardQty = metrics.baseboardMeters;
+      const flooringQty = metrics.areaM2;
+      const paintingQty = Number.isFinite(painting.totalAreaM2) ? painting.totalAreaM2 : null;
+      const switchQty = roomLighting.switchCount;
+      const lampQty = roomLighting.lampCount;
+
+      const baseboardAmount = Number.isFinite(baseboardQty)
+        ? baseboardQty * ESTIMATE_DEFAULT_RATES.baseboardPerM
+        : null;
+      const flooringAmount = Number.isFinite(flooringQty)
+        ? flooringQty * ESTIMATE_DEFAULT_RATES.flooringPerM2
+        : null;
+      const paintingAmount = Number.isFinite(paintingQty)
+        ? paintingQty * ESTIMATE_DEFAULT_RATES.paintingPerM2
+        : null;
+      const switchAmount = switchQty * ESTIMATE_DEFAULT_RATES.switchEach;
+      const lampAmount = lampQty * ESTIMATE_DEFAULT_RATES.lampEach;
+
+      const roomTotal = [
+        baseboardAmount,
+        flooringAmount,
+        paintingAmount,
+        switchAmount,
+        lampAmount
+      ].reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+
+      if (Number.isFinite(baseboardAmount) || Number.isFinite(flooringAmount) || Number.isFinite(paintingAmount)) {
+        hasScaledCosts = true;
+      }
+      grandTotal += roomTotal;
+
+      const visibleBaseboardSegments = baseboardSegments.slice(0, 12);
+      const hiddenBaseboardCount = Math.max(0, baseboardSegments.length - visibleBaseboardSegments.length);
+
+      const baseboardSegmentRows = visibleBaseboardSegments.map((segment, index) => (
+        `<div class="estimate-row estimate-row-indent-2">` +
+        `<span class="estimate-col-label">${escapeHtmlForOverlay(`${index + 1}. ${segment.rectangleId}:${segment.side}`)}</span>` +
+        `<span class="estimate-col-qty">${escapeHtmlForOverlay(formatLengthLabel(segment.lengthWorld, segment.lengthMeters))}</span>` +
+        `<span class="estimate-col-rate">-</span>` +
+        `<span class="estimate-col-amount">-</span>` +
+        `</div>`
+      )).join("");
+      const baseboardHiddenRow = hiddenBaseboardCount > 0
+        ? `<div class="estimate-row estimate-row-indent-2 estimate-row-note"><span class="estimate-col-label">... ${hiddenBaseboardCount} more segments</span><span></span><span></span><span></span></div>`
+        : "";
+
+      return (
+        `<details class="estimate-room-block">` +
+        `<summary class="estimate-row estimate-row-room">` +
+        `<span class="estimate-col-label">${escapeHtmlForOverlay(roomEntry.name)}</span>` +
+        `<span class="estimate-col-qty">${roomEntry.rectangleIds.length} rect${roomEntry.rectangleIds.length === 1 ? "" : "s"}</span>` +
+        `<span class="estimate-col-rate"></span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(roomTotal)}</span>` +
+        `</summary>` +
+        `<div class="estimate-children">` +
+        `<details class="estimate-sub-block">` +
+        `<summary class="estimate-row estimate-row-indent-1">` +
+        `<span class="estimate-col-label">Baseboard</span>` +
+        `<span class="estimate-col-qty">${escapeHtmlForOverlay(Number.isFinite(baseboardQty) ? `${baseboardQty.toFixed(2)} m` : `${metrics.baseboardWorld.toFixed(1)} wu`)}</span>` +
+        `<span class="estimate-col-rate">${escapeHtmlForOverlay(Number.isFinite(baseboardQty) ? formatEstimateRate(ESTIMATE_DEFAULT_RATES.baseboardPerM, "m") : "set scale")}</span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(baseboardAmount)}</span>` +
+        `</summary>` +
+        `<div class="estimate-children">${baseboardSegmentRows}${baseboardHiddenRow}</div>` +
+        `</details>` +
+        `<div class="estimate-row estimate-row-indent-1">` +
+        `<span class="estimate-col-label">Flooring</span>` +
+        `<span class="estimate-col-qty">${escapeHtmlForOverlay(Number.isFinite(flooringQty) ? `${flooringQty.toFixed(2)} m²` : `${metrics.areaWorld.toFixed(1)} wu²`)}</span>` +
+        `<span class="estimate-col-rate">${escapeHtmlForOverlay(Number.isFinite(flooringQty) ? formatEstimateRate(ESTIMATE_DEFAULT_RATES.flooringPerM2, "m²") : "set scale")}</span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(flooringAmount)}</span>` +
+        `</div>` +
+        `<div class="estimate-row estimate-row-indent-1">` +
+        `<span class="estimate-col-label">Painting</span>` +
+        `<span class="estimate-col-qty">${escapeHtmlForOverlay(Number.isFinite(paintingQty) ? `${paintingQty.toFixed(2)} m²` : "set scale")}</span>` +
+        `<span class="estimate-col-rate">${escapeHtmlForOverlay(Number.isFinite(paintingQty) ? formatEstimateRate(ESTIMATE_DEFAULT_RATES.paintingPerM2, "m²") : "set scale")}</span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(paintingAmount)}</span>` +
+        `</div>` +
+        `<details class="estimate-sub-block">` +
+        `<summary class="estimate-row estimate-row-indent-1">` +
+        `<span class="estimate-col-label">Lighting</span>` +
+        `<span class="estimate-col-qty">${roomLighting.switchCount + roomLighting.lampCount} items</span>` +
+        `<span class="estimate-col-rate"></span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(switchAmount + lampAmount)}</span>` +
+        `</summary>` +
+        `<div class="estimate-children">` +
+        `<div class="estimate-row estimate-row-indent-2">` +
+        `<span class="estimate-col-label">Switches</span>` +
+        `<span class="estimate-col-qty">${switchQty} pcs</span>` +
+        `<span class="estimate-col-rate">${formatEstimateRate(ESTIMATE_DEFAULT_RATES.switchEach, "pc")}</span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(switchAmount)}</span>` +
+        `</div>` +
+        `<div class="estimate-row estimate-row-indent-2">` +
+        `<span class="estimate-col-label">Lamps</span>` +
+        `<span class="estimate-col-qty">${lampQty} pcs</span>` +
+        `<span class="estimate-col-rate">${formatEstimateRate(ESTIMATE_DEFAULT_RATES.lampEach, "pc")}</span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(lampAmount)}</span>` +
+        `</div>` +
+        `</div>` +
+        `</details>` +
+        `<div class="estimate-row estimate-row-total">` +
+        `<span class="estimate-col-label">Room Total</span>` +
+        `<span class="estimate-col-qty"></span>` +
+        `<span class="estimate-col-rate"></span>` +
+        `<span class="estimate-col-amount">${formatEstimateCurrency(roomTotal)}</span>` +
+        `</div>` +
+        `</div>` +
+        `</details>`
+      );
+    }).join("");
+
+    const scaleNote = hasScaledCosts
+      ? ""
+      : `<div class="estimate-note">Scale is not calibrated: baseboard/flooring/painting costs require scale.</div>`;
+
+    return (
+      `<div class="estimate-table">` +
+      `<div class="estimate-row estimate-row-header">` +
+      `<span class="estimate-col-label">Item</span>` +
+      `<span class="estimate-col-qty">Qty</span>` +
+      `<span class="estimate-col-rate">Rate</span>` +
+      `<span class="estimate-col-amount">Amount</span>` +
+      `</div>` +
+      `${roomBlocks}` +
+      `<div class="estimate-row estimate-row-grand-total">` +
+      `<span class="estimate-col-label">GRAND TOTAL</span>` +
+      `<span class="estimate-col-qty"></span>` +
+      `<span class="estimate-col-rate"></span>` +
+      `<span class="estimate-col-amount">${formatEstimateCurrency(grandTotal)}</span>` +
+      `</div>` +
+      `${scaleNote}` +
+      `</div>`
+    );
   }
 
   function buildRoomInventoryDetailsHtml(activeRoom, plan, baseboard, metersPerWorldUnit) {
@@ -2767,7 +2738,7 @@ export function mountEditorRuntime(options) {
         const linkedSwitchCount = group.linkedSwitchIds.length;
         return `<li>${escapeHtmlForOverlay(group.name)} — lamps ${group.lampIds.length}, switches ${linkedSwitchCount}</li>`;
       }).join("")
-      : "<li>No lighting groups in this room.</li>";
+      : "<li>No link groups yet. Use Link Lights: click switch, click lamps.</li>";
 
     const integrityNotes = [];
     if (electricity.switchIdsWithNoLinks.length > 0) {
@@ -2779,19 +2750,14 @@ export function mountEditorRuntime(options) {
     const integrityLabel = integrityNotes.length > 0 ? integrityNotes.join(" • ") : "No obvious lighting link gaps";
 
     return (
-      `<div class="room-details-header">` +
-      `<strong>${escapeHtmlForOverlay(activeRoom.name)}</strong><br>` +
-      `ID: ${escapeHtmlForOverlay(displayId)}<br>` +
-      `Type: ${escapeHtmlForOverlay(displayType)}<br>` +
-      `Rectangles: ${activeRoom.rectangleIds.length}<br>` +
-      `Subtypes: ${escapeHtmlForOverlay(formatLightingSubtypeCounts(roomLighting.subtypeCounts) || "none")}<br>` +
-      `Color: <span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${roomColor(activeRoom.id, 0.9)};"></span>` +
+      `<div class="room-tree-meta">` +
+      `ID ${escapeHtmlForOverlay(displayId)} • Type ${escapeHtmlForOverlay(displayType)} • Rectangles ${activeRoom.rectangleIds.length} • Subtypes ${escapeHtmlForOverlay(formatLightingSubtypeCounts(roomLighting.subtypeCounts) || "none")}` +
       `</div>` +
-      `<details class="room-package" open>` +
+      `<details class="room-package">` +
       `<summary>Baseboard — ${escapeHtmlForOverlay(metrics.baseboardLabel)} (${baseboardSegments.length} seg)</summary>` +
       `<div class="room-package-body"><ol class="room-lines">${baseboardRowsHtml}</ol></div>` +
       `</details>` +
-      `<details class="room-package" open>` +
+      `<details class="room-package">` +
       `<summary>Flooring — ${escapeHtmlForOverlay(metrics.areaLabel)}</summary>` +
       `<div class="room-package-body">Floor material: <em>unset (v1 placeholder)</em>.</div>` +
       `</details>` +
@@ -2799,7 +2765,7 @@ export function mountEditorRuntime(options) {
       `<summary>Painting — ${formatAreaLabel(painting.totalAreaM2)} (h=${painting.wallHeightMeters.toFixed(2)}m)</summary>` +
       `<div class="room-package-body"><ol class="room-lines">${paintingRowsHtml}</ol></div>` +
       `</details>` +
-      `<details class="room-package" open>` +
+      `<details class="room-package">` +
       `<summary>Electricity — switches ${roomLighting.switchCount}, lamps ${roomLighting.lampCount}, groups ${roomLighting.groupCount}, links ${roomLighting.linkCount}</summary>` +
       `<div class="room-package-body">` +
       `<div class="room-inline-note">Integrity: ${escapeHtmlForOverlay(integrityLabel)}</div>` +
@@ -2807,10 +2773,10 @@ export function mountEditorRuntime(options) {
       `<summary>Sockets (${electricity.sockets.length})</summary>` +
       `<div class="room-package-body">No sockets model yet.</div>` +
       `</details>` +
-      `<details class="room-subpackage" open>` +
+      `<details class="room-subpackage">` +
       `<summary>Lighting Groups (${electricity.groups.length})</summary>` +
       `<div class="room-package-body"><ul class="room-lines">${groupRowsHtml}</ul>` +
-      `<div class="room-inline-note">Ungrouped lamps: ${electricity.ungroupedLampIds.length}</div>` +
+      `<div class="room-inline-note">Linked lamps: ${electricity.controlledLampIds.length}/${electricity.lamps.length}</div>` +
       `</div>` +
       `</details>` +
       `</div>` +
@@ -2846,6 +2812,20 @@ export function mountEditorRuntime(options) {
       return `${areaM2.toFixed(2)} m²`;
     }
     return "n/a";
+  }
+
+  function formatEstimateCurrency(amount) {
+    if (!Number.isFinite(amount)) {
+      return "—";
+    }
+    return `${ESTIMATE_CURRENCY_SYMBOL}${amount.toFixed(2)}`;
+  }
+
+  function formatEstimateRate(rate, unit) {
+    if (!Number.isFinite(rate)) {
+      return "—";
+    }
+    return `${ESTIMATE_CURRENCY_SYMBOL}${rate.toFixed(2)}/${unit}`;
   }
 
   function commitScaleCalibrationDraft(draft, currentScale) {
@@ -2953,22 +2933,6 @@ function deriveNextUserFixtureId(plan) {
   let maxNumericId = 0;
   for (const fixture of fixtures) {
     const match = /^fx_user_(\d+)$/.exec(fixture?.id);
-    if (!match) {
-      continue;
-    }
-    const numericId = Number.parseInt(match[1], 10);
-    if (Number.isFinite(numericId)) {
-      maxNumericId = Math.max(maxNumericId, numericId);
-    }
-  }
-  return maxNumericId + 1;
-}
-
-function deriveNextUserLightingGroupId(plan) {
-  const groups = getLightingCollections(plan).groups;
-  let maxNumericId = 0;
-  for (const group of groups) {
-    const match = /^lg_user_(\d+)$/.exec(group?.id);
     if (!match) {
       continue;
     }
@@ -3312,6 +3276,12 @@ function deriveRoomPaintingBreakdown(roomEntry, baseboard, metersPerWorldUnit, w
 
 function computeLightingTotals(plan) {
   const lighting = getLightingCollections(plan);
+  const fixtureById = new Map(
+    lighting.fixtures
+      .filter((fixture) => typeof fixture?.id === "string" && fixture.id)
+      .map((fixture) => [fixture.id, fixture])
+  );
+  const validLinks = collectValidLampLinks(lighting.links, fixtureById);
   let switchCount = 0;
   let lampCount = 0;
   const subtypeCounts = {};
@@ -3329,8 +3299,8 @@ function computeLightingTotals(plan) {
   return {
     switchCount,
     lampCount,
-    groupCount: lighting.groups.length,
-    linkCount: lighting.links.length,
+    groupCount: deriveLightingGroupsFromLinks(validLinks, fixtureById).length,
+    linkCount: validLinks.length,
     subtypeCounts
   };
 }
@@ -3359,10 +3329,77 @@ function computeRoomLightingCounts(roomEntry, plan) {
   return {
     switchCount,
     lampCount,
-    groupCount: membership.groupIdsInRoom.size,
+    groupCount: deriveLightingGroupsFromLinks(
+      membership.linksInRoom,
+      membership.fixtureById,
+      membership.lampIdsInRoom
+    ).length,
     linkCount: membership.linksInRoom.length,
     subtypeCounts
   };
+}
+
+function collectValidLampLinks(links, fixtureById) {
+  if (!Array.isArray(links) || !(fixtureById instanceof Map)) {
+    return [];
+  }
+  const dedupe = new Set();
+  const validLinks = [];
+  for (const link of links) {
+    if (link?.targetType !== "lamp") {
+      continue;
+    }
+    const switchId = normalizeRectangleIdForUi(link?.switchId);
+    const targetLampId = normalizeRectangleIdForUi(link?.targetId);
+    if (!switchId || !targetLampId) {
+      continue;
+    }
+    const switchFixture = fixtureById.get(switchId);
+    const lampFixture = fixtureById.get(targetLampId);
+    if (switchFixture?.kind !== "switch" || lampFixture?.kind !== "lamp") {
+      continue;
+    }
+    const edgeKey = `${switchId}|${targetLampId}`;
+    if (dedupe.has(edgeKey)) {
+      continue;
+    }
+    dedupe.add(edgeKey);
+    validLinks.push({
+      switchId,
+      targetType: "lamp",
+      targetId: targetLampId
+    });
+  }
+  return validLinks;
+}
+
+function deriveLightingGroupsFromLinks(links, fixtureById, allowedLampIds = null) {
+  if (!(fixtureById instanceof Map)) {
+    return [];
+  }
+  const linkList = collectValidLampLinks(links, fixtureById);
+  const lampIdFilter = allowedLampIds instanceof Set ? allowedLampIds : null;
+  const groupsBySwitchId = new Map();
+  for (const link of linkList) {
+    const switchId = link.switchId;
+    const lampId = link.targetId;
+    if (lampIdFilter && !lampIdFilter.has(lampId)) {
+      continue;
+    }
+    if (!groupsBySwitchId.has(switchId)) {
+      groupsBySwitchId.set(switchId, new Set());
+    }
+    groupsBySwitchId.get(switchId).add(lampId);
+  }
+  return Array.from(groupsBySwitchId.entries())
+    .map(([switchId, lampIdSet]) => ({
+      id: `switch:${switchId}`,
+      name: `Switch ${switchId}`,
+      switchId,
+      lampIds: Array.from(lampIdSet),
+      linkedSwitchIds: [switchId]
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
 }
 
 function isFixtureInRoomEntry(fixture, roomId, roomRectangleIdSet, rectangles) {
@@ -3429,28 +3466,30 @@ function deriveRoomLightingMembership(roomEntry, plan) {
     }
   }
 
-  const groupsInRoom = [];
-  const groupIdsInRoom = new Set();
-  for (const group of lighting.groups) {
-    const groupId = normalizeRectangleIdForUi(group?.id);
-    if (!groupId) {
-      continue;
-    }
-    const groupFixtureIds = Array.isArray(group?.fixtureIds) ? group.fixtureIds : [];
-    const overlapsRoomFixtures = groupFixtureIds.some((fixtureId) => fixtureIdsInRoom.has(fixtureId));
-    if (overlapsRoomFixtures || (roomId && group?.roomId === roomId)) {
-      groupsInRoom.push(group);
-      groupIdsInRoom.add(groupId);
-    }
-  }
-
   const linksInRoom = [];
   for (const link of lighting.links) {
-    const fromSwitchInRoom = switchIds.has(link?.switchId);
-    const toLampInRoom = link?.targetType === "lamp" && lampIds.has(link?.targetId);
-    const toGroupInRoom = link?.targetType === "lampGroup" && groupIdsInRoom.has(link?.targetId);
-    if (fromSwitchInRoom || toLampInRoom || toGroupInRoom) {
-      linksInRoom.push(link);
+    if (link?.targetType !== "lamp") {
+      continue;
+    }
+    const switchId = normalizeRectangleIdForUi(link?.switchId);
+    const lampId = normalizeRectangleIdForUi(link?.targetId);
+    if (!switchId || !lampId) {
+      continue;
+    }
+    const switchFixture = fixtureById.get(switchId);
+    const lampFixture = fixtureById.get(lampId);
+    if (switchFixture?.kind !== "switch" || lampFixture?.kind !== "lamp") {
+      continue;
+    }
+    const fromSwitchInRoom = switchIds.has(switchId);
+    const toLampInRoom = lampIds.has(lampId);
+    if (fromSwitchInRoom || toLampInRoom) {
+      linksInRoom.push({
+        ...link,
+        switchId,
+        targetType: "lamp",
+        targetId: lampId
+      });
     }
   }
 
@@ -3460,8 +3499,6 @@ function deriveRoomLightingMembership(roomEntry, plan) {
     fixtureIdsInRoom,
     switchIdsInRoom: switchIds,
     lampIdsInRoom: lampIds,
-    groupsInRoom,
-    groupIdsInRoom,
     linksInRoom
   };
 }
@@ -3470,64 +3507,32 @@ function deriveRoomElectricityInventory(roomEntry, plan) {
   const membership = deriveRoomLightingMembership(roomEntry, plan);
   const controlledLampIds = new Set();
 
-  const groupById = new Map(
-    membership.groupsInRoom
-      .filter((group) => typeof group?.id === "string" && group.id)
-      .map((group) => [group.id, group])
-  );
-
   for (const link of membership.linksInRoom) {
     if (link?.targetType === "lamp" && membership.lampIdsInRoom.has(link?.targetId)) {
       controlledLampIds.add(link.targetId);
-      continue;
-    }
-    if (link?.targetType === "lampGroup") {
-      const group = groupById.get(link?.targetId);
-      if (!group) {
-        continue;
-      }
-      const fixtureIds = Array.isArray(group?.fixtureIds) ? group.fixtureIds : [];
-      for (const fixtureId of fixtureIds) {
-        if (membership.lampIdsInRoom.has(fixtureId)) {
-          controlledLampIds.add(fixtureId);
-        }
-      }
     }
   }
 
-  const groupedLampIds = new Set();
-  const groups = membership.groupsInRoom.map((group) => {
-    const fixtureIds = Array.isArray(group?.fixtureIds) ? group.fixtureIds : [];
-    const lampIds = fixtureIds.filter((fixtureId) => membership.lampIdsInRoom.has(fixtureId));
-    for (const lampId of lampIds) {
-      groupedLampIds.add(lampId);
-    }
-    const incomingSwitchIds = new Set(
-      membership.linksInRoom
-        .filter((link) => link?.targetType === "lampGroup" && link?.targetId === group?.id)
-        .map((link) => link?.switchId)
-        .filter(Boolean)
-    );
-    return {
-      id: normalizeRectangleIdForUi(group?.id),
-      name: normalizeLightingGroupNameForUi(group?.name),
-      lampIds,
-      linkedSwitchIds: Array.from(incomingSwitchIds)
-    };
-  }).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+  const groups = deriveLightingGroupsFromLinks(
+    membership.linksInRoom,
+    membership.fixtureById,
+    membership.lampIdsInRoom
+  );
 
-  const ungroupedLampIds = Array.from(membership.lampIdsInRoom).filter((lampId) => !groupedLampIds.has(lampId));
+  const controlledLampIdList = Array.from(controlledLampIds);
   const orphanLampIds = Array.from(membership.lampIdsInRoom).filter((lampId) => !controlledLampIds.has(lampId));
-  const switchIdsWithNoLinks = Array.from(membership.switchIdsInRoom).filter((switchId) => !membership.linksInRoom.some((link) => link?.switchId === switchId));
+  const switchIdsWithNoLinks = Array.from(membership.switchIdsInRoom).filter((switchId) => (
+    !membership.linksInRoom.some((link) => link?.switchId === switchId && link?.targetType === "lamp")
+  ));
 
   return {
     switches: Array.from(membership.switchIdsInRoom),
     lamps: Array.from(membership.lampIdsInRoom),
+    controlledLampIds: controlledLampIdList,
     groups,
     links: membership.linksInRoom,
     switchIdsWithNoLinks,
     orphanLampIds,
-    ungroupedLampIds,
     sockets: []
   };
 }
@@ -3535,20 +3540,17 @@ function deriveRoomElectricityInventory(roomEntry, plan) {
 function getLightingCollections(plan) {
   const rawLighting = plan?.entities?.lighting;
   const fixtures = Array.isArray(rawLighting?.fixtures) ? rawLighting.fixtures : [];
-  const groups = Array.isArray(rawLighting?.groups) ? rawLighting.groups : [];
   const links = Array.isArray(rawLighting?.links) ? rawLighting.links : [];
-  return { fixtures, groups, links };
+  return { fixtures, links };
 }
 
 function formatLightingOverlaySummary(plan, editorState) {
   const totals = computeLightingTotals(plan);
   const selectedFixture = getSelectedLightingFixture(plan, editorState);
   const linkSwitchId = normalizeRectangleIdForUi(editorState?.lightingSelection?.linkSwitchId);
-  const selectedGroupId = normalizeRectangleIdForUi(editorState?.lightingSelection?.groupId);
   const linkSourceLabel = linkSwitchId ? `source ${linkSwitchId}` : "source none";
-  const groupLabel = selectedGroupId ? `group ${selectedGroupId}` : "group none";
   const selectedLabel = selectedFixture ? `${selectedFixture.kind} ${selectedFixture.id}` : "none";
-  return `switches ${totals.switchCount}, lamps ${totals.lampCount}, groups ${totals.groupCount}, links ${totals.linkCount}; subtypes ${formatLightingSubtypeCounts(totals.subtypeCounts) || "none"}; selected ${selectedLabel}; ${linkSourceLabel}; ${groupLabel}`;
+  return `switches ${totals.switchCount}, lamps ${totals.lampCount}, groups ${totals.groupCount}, links ${totals.linkCount}; subtypes ${formatLightingSubtypeCounts(totals.subtypeCounts) || "none"}; selected ${selectedLabel}; ${linkSourceLabel}`;
 }
 
 function formatLightingSubtypeCounts(subtypeCounts) {
@@ -3609,6 +3611,12 @@ function deriveLightingRoomTotals(plan, lighting = null) {
       .filter(Boolean)
   );
   const totals = [];
+  const fixtureById = new Map(
+    collections.fixtures
+      .filter((fixture) => typeof fixture?.id === "string" && fixture.id)
+      .map((fixture) => [fixture.id, fixture])
+  );
+  const validLinks = collectValidLampLinks(collections.links, fixtureById);
   for (const roomId of roomIds) {
     let switchCount = 0;
     let lampCount = 0;
@@ -3627,13 +3635,14 @@ function deriveLightingRoomTotals(plan, lighting = null) {
         : (fixture?.kind === "switch" ? "switch_single" : "lamp");
       subtypeCounts[subtype] = (subtypeCounts[subtype] ?? 0) + 1;
     }
-    const groupCount = collections.groups.filter((group) => group?.roomId === roomId).length;
     const switchIds = new Set(
       collections.fixtures
         .filter((fixture) => fixture?.kind === "switch" && fixture?.roomId === roomId && typeof fixture?.id === "string")
         .map((fixture) => fixture.id)
     );
-    const linkCount = collections.links.filter((link) => switchIds.has(link?.switchId)).length;
+    const roomLinks = validLinks.filter((link) => switchIds.has(link?.switchId));
+    const groupCount = deriveLightingGroupsFromLinks(roomLinks, fixtureById).length;
+    const linkCount = roomLinks.length;
     totals.push({
       roomId,
       roomName: roomById.get(roomId)?.name ?? roomId,
@@ -3650,7 +3659,7 @@ function deriveLightingRoomTotals(plan, lighting = null) {
 
 function deriveLightingValidationFindings(plan) {
   const lighting = getLightingCollections(plan);
-  if (lighting.fixtures.length === 0 && lighting.groups.length === 0 && lighting.links.length === 0) {
+  if (lighting.fixtures.length === 0 && lighting.links.length === 0) {
     return [];
   }
 
@@ -3659,11 +3668,6 @@ function deriveLightingValidationFindings(plan) {
       .filter((fixture) => typeof fixture?.id === "string" && fixture.id)
       .map((fixture) => [fixture.id, fixture])
   );
-  const groupById = new Map(
-    lighting.groups
-      .filter((group) => typeof group?.id === "string" && group.id)
-      .map((group) => [group.id, group])
-  );
   const rectangleById = new Map(
     (Array.isArray(plan?.entities?.rectangles) ? plan.entities.rectangles : [])
       .filter((rectangle) => typeof rectangle?.id === "string" && rectangle.id)
@@ -3671,17 +3675,7 @@ function deriveLightingValidationFindings(plan) {
   );
 
   const findings = [];
-  const danglingGroupLampCount = countDanglingGroupLampReferences(lighting.groups, fixtureById);
-  if (danglingGroupLampCount > 0) {
-    findings.push({
-      code: "lighting_group_dangling_lamp",
-      severity: "warning",
-      message: `${danglingGroupLampCount} invalid lamp reference${danglingGroupLampCount === 1 ? "" : "s"} in lighting groups`,
-      count: danglingGroupLampCount
-    });
-  }
-
-  const danglingLinksCount = countDanglingLightingLinks(lighting.links, fixtureById, groupById);
+  const danglingLinksCount = countDanglingLightingLinks(lighting.links, fixtureById);
   if (danglingLinksCount > 0) {
     findings.push({
       code: "lighting_link_dangling_target",
@@ -3714,25 +3708,8 @@ function deriveLightingValidationFindings(plan) {
   return findings;
 }
 
-function countDanglingGroupLampReferences(groups, fixtureById) {
-  if (!Array.isArray(groups) || !(fixtureById instanceof Map)) {
-    return 0;
-  }
-  let count = 0;
-  for (const group of groups) {
-    const fixtureIds = Array.isArray(group?.fixtureIds) ? group.fixtureIds : [];
-    for (const fixtureId of fixtureIds) {
-      const fixture = fixtureById.get(fixtureId);
-      if (!fixture || fixture.kind !== "lamp") {
-        count += 1;
-      }
-    }
-  }
-  return count;
-}
-
-function countDanglingLightingLinks(links, fixtureById, groupById) {
-  if (!Array.isArray(links) || !(fixtureById instanceof Map) || !(groupById instanceof Map)) {
+function countDanglingLightingLinks(links, fixtureById) {
+  if (!Array.isArray(links) || !(fixtureById instanceof Map)) {
     return 0;
   }
   let count = 0;
@@ -3742,20 +3719,14 @@ function countDanglingLightingLinks(links, fixtureById, groupById) {
       count += 1;
       continue;
     }
-    if (link?.targetType === "lamp") {
-      const targetLamp = fixtureById.get(link?.targetId);
-      if (!targetLamp || targetLamp.kind !== "lamp") {
-        count += 1;
-      }
+    if (link?.targetType !== "lamp") {
+      count += 1;
       continue;
     }
-    if (link?.targetType === "lampGroup") {
-      if (!groupById.has(link?.targetId)) {
-        count += 1;
-      }
-      continue;
+    const targetLamp = fixtureById.get(link?.targetId);
+    if (!targetLamp || targetLamp.kind !== "lamp") {
+      count += 1;
     }
-    count += 1;
   }
   return count;
 }
@@ -4969,13 +4940,6 @@ function normalizeRoomEntryName(name, fallbackId) {
   return fallbackId;
 }
 
-function normalizeLightingGroupNameForUi(name) {
-  if (typeof name === "string" && name.trim()) {
-    return name.trim();
-  }
-  return "Lamp Group";
-}
-
 function deriveRoomEntryIdForRectangle(rectangle) {
   const roomId = normalizeRectangleIdForUi(rectangle?.roomId);
   if (roomId) {
@@ -5131,7 +5095,7 @@ function drawLightingLinks(ctx, plan, editorState, camera) {
     if (!switchFixture || switchFixture.kind !== "switch") {
       continue;
     }
-    const targets = resolveLightingLinkTargetPoints(link, fixtureById, lighting.groups);
+    const targets = resolveLightingLinkTargetPoints(link, fixtureById);
     if (targets.length === 0) {
       continue;
     }
@@ -5153,37 +5117,18 @@ function drawLightingLinks(ctx, plan, editorState, camera) {
   ctx.restore();
 }
 
-function resolveLightingLinkTargetPoints(link, fixtureById, groups) {
+function resolveLightingLinkTargetPoints(link, fixtureById) {
   if (!link || !(fixtureById instanceof Map)) {
     return [];
   }
-  if (link.targetType === "lamp") {
-    const lamp = fixtureById.get(link.targetId);
-    if (!lamp || lamp.kind !== "lamp") {
-      return [];
-    }
-    return [{ x: lamp.x, y: lamp.y }];
-  }
-  if (link.targetType !== "lampGroup") {
+  if (link.targetType !== "lamp") {
     return [];
   }
-
-  const group = Array.isArray(groups)
-    ? groups.find((candidate) => candidate?.id === link.targetId) ?? null
-    : null;
-  if (!group) {
+  const lamp = fixtureById.get(link.targetId);
+  if (!lamp || lamp.kind !== "lamp") {
     return [];
   }
-  const fixtureIds = Array.isArray(group.fixtureIds) ? group.fixtureIds : [];
-  const targets = [];
-  for (const fixtureId of fixtureIds) {
-    const lamp = fixtureById.get(fixtureId);
-    if (!lamp || lamp.kind !== "lamp") {
-      continue;
-    }
-    targets.push({ x: lamp.x, y: lamp.y });
-  }
-  return targets;
+  return [{ x: lamp.x, y: lamp.y }];
 }
 
 function drawLightingFixtures(ctx, plan, editorState, camera) {
@@ -5251,11 +5196,6 @@ function deriveLampPowerStateByLampId(lighting, switchStatesById) {
       .filter((fixture) => fixture?.kind === "lamp" && typeof fixture?.id === "string" && fixture.id)
       .map((fixture) => fixture.id)
   );
-  const groupById = new Map(
-    lighting.groups
-      .filter((group) => typeof group?.id === "string" && group.id)
-      .map((group) => [group.id, group])
-  );
   const controllingSwitchIdsByLampId = new Map(
     Array.from(lampIds).map((lampId) => [lampId, new Set()])
   );
@@ -5273,21 +5213,6 @@ function deriveLampPowerStateByLampId(lighting, switchStatesById) {
       const lampId = normalizeRectangleIdForUi(link?.targetId);
       if (lampId && controllingSwitchIdsByLampId.has(lampId)) {
         controllingSwitchIdsByLampId.get(lampId).add(switchId);
-      }
-      continue;
-    }
-    if (link?.targetType === "lampGroup") {
-      const groupId = normalizeRectangleIdForUi(link?.targetId);
-      const group = groupId ? groupById.get(groupId) : null;
-      if (!group) {
-        continue;
-      }
-      const fixtureIds = Array.isArray(group.fixtureIds) ? group.fixtureIds : [];
-      for (const fixtureId of fixtureIds) {
-        const lampId = normalizeRectangleIdForUi(fixtureId);
-        if (lampId && controllingSwitchIdsByLampId.has(lampId)) {
-          controllingSwitchIdsByLampId.get(lampId).add(switchId);
-        }
       }
     }
   }

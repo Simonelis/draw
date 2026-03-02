@@ -43,7 +43,6 @@ export function createEmptyPlan() {
       rooms: [],
       lighting: {
         fixtures: [],
-        groups: [],
         links: []
       }
     }
@@ -766,9 +765,7 @@ export function planReducer(plan, action) {
         return plan;
       }
 
-      const targetExists = targetType === "lamp"
-        ? hasLightingFixture(lighting.fixtures, targetId, "lamp")
-        : hasLightingGroup(lighting.groups, targetId);
+      const targetExists = hasLightingFixture(lighting.fixtures, targetId, "lamp");
       if (!targetExists) {
         return plan;
       }
@@ -826,150 +823,6 @@ export function planReducer(plan, action) {
           ...plan.entities,
           lighting: {
             ...lighting,
-            links: nextLinks
-          }
-        }
-      });
-    }
-
-    case "plan/lighting/createGroupFromLamps": {
-      const lighting = ensureLightingCollections(plan.entities.lighting);
-      const fixtureIds = normalizeLightingGroupFixtureIds(action.fixtureIds);
-      if (fixtureIds.length === 0) {
-        return plan;
-      }
-
-      const fixtureById = new Map(lighting.fixtures.map((fixture) => [fixture.id, fixture]));
-      for (const fixtureId of fixtureIds) {
-        const fixture = fixtureById.get(fixtureId);
-        if (!fixture || fixture.kind !== "lamp") {
-          return plan;
-        }
-      }
-
-      const groupId = normalizeNonEmptyString(action.groupId) ?? generateLightingGroupId(lighting.groups);
-      if (lighting.groups.some((group) => group?.id === groupId)) {
-        return plan;
-      }
-
-      const requestedRoomId = normalizeNonEmptyString(action.roomId);
-      const inferredRoomId = inferLightingGroupRoomIdFromFixtures(fixtureIds, fixtureById);
-      const roomId = requestedRoomId ?? inferredRoomId ?? null;
-      if (roomId) {
-        for (const fixtureId of fixtureIds) {
-          const fixtureRoomId = normalizeNonEmptyString(fixtureById.get(fixtureId)?.roomId);
-          if (fixtureRoomId && fixtureRoomId !== roomId) {
-            return plan;
-          }
-        }
-      }
-
-      const nextGroup = {
-        id: groupId,
-        kind: "lampGroup",
-        name: normalizeLightingGroupName(action.name, lighting.groups.length + 1),
-        roomId,
-        fixtureIds,
-        meta: {
-          pattern: "manual"
-        }
-      };
-
-      return stampPlan({
-        ...plan,
-        entities: {
-          ...plan.entities,
-          lighting: {
-            ...lighting,
-            groups: [...lighting.groups, nextGroup]
-          }
-        }
-      });
-    }
-
-    case "plan/lighting/updateGroupLamps": {
-      const groupId = normalizeNonEmptyString(action.groupId);
-      if (!groupId) {
-        return plan;
-      }
-      const lighting = ensureLightingCollections(plan.entities.lighting);
-      const groupIndex = lighting.groups.findIndex((group) => group?.id === groupId);
-      if (groupIndex < 0) {
-        return plan;
-      }
-
-      const fixtureIds = normalizeLightingGroupFixtureIds(action.fixtureIds);
-      if (fixtureIds.length === 0) {
-        return plan;
-      }
-      const fixtureById = new Map(lighting.fixtures.map((fixture) => [fixture.id, fixture]));
-      for (const fixtureId of fixtureIds) {
-        const fixture = fixtureById.get(fixtureId);
-        if (!fixture || fixture.kind !== "lamp") {
-          return plan;
-        }
-      }
-
-      const currentGroup = lighting.groups[groupIndex];
-      const roomId = normalizeNonEmptyString(action.roomId) ?? currentGroup?.roomId ?? null;
-      if (roomId) {
-        for (const fixtureId of fixtureIds) {
-          const fixtureRoomId = normalizeNonEmptyString(fixtureById.get(fixtureId)?.roomId);
-          if (fixtureRoomId && fixtureRoomId !== roomId) {
-            return plan;
-          }
-        }
-      }
-
-      const nextName = normalizeLightingGroupName(action.name, groupIndex + 1);
-      const currentFixtureIds = normalizeLightingGroupFixtureIds(currentGroup?.fixtureIds);
-      const sameFixtureIds = currentFixtureIds.length === fixtureIds.length &&
-        currentFixtureIds.every((fixtureId, index) => fixtureId === fixtureIds[index]);
-      const currentName = normalizeLightingGroupName(currentGroup?.name, groupIndex + 1);
-      if (sameFixtureIds && currentName === nextName && (currentGroup?.roomId ?? null) === roomId) {
-        return plan;
-      }
-
-      const nextGroups = lighting.groups.slice();
-      nextGroups[groupIndex] = {
-        ...currentGroup,
-        name: nextName,
-        roomId,
-        fixtureIds
-      };
-
-      return stampPlan({
-        ...plan,
-        entities: {
-          ...plan.entities,
-          lighting: {
-            ...lighting,
-            groups: nextGroups
-          }
-        }
-      });
-    }
-
-    case "plan/lighting/deleteGroup": {
-      const groupId = normalizeNonEmptyString(action.groupId);
-      if (!groupId) {
-        return plan;
-      }
-
-      const lighting = ensureLightingCollections(plan.entities.lighting);
-      const nextGroups = lighting.groups.filter((group) => group?.id !== groupId);
-      if (nextGroups.length === lighting.groups.length) {
-        return plan;
-      }
-      const nextLinks = lighting.links.filter((link) => !(link?.targetType === "lampGroup" && link?.targetId === groupId));
-
-      return stampPlan({
-        ...plan,
-        entities: {
-          ...plan.entities,
-          lighting: {
-            ...lighting,
-            groups: nextGroups,
             links: nextLinks
           }
         }
@@ -1347,7 +1200,6 @@ function ensureLightingCollections(rawLighting) {
   const lighting = rawLighting && typeof rawLighting === "object" ? rawLighting : {};
   return {
     fixtures: Array.isArray(lighting.fixtures) ? lighting.fixtures.filter((fixture) => fixture && typeof fixture === "object") : [],
-    groups: Array.isArray(lighting.groups) ? lighting.groups.filter((group) => group && typeof group === "object") : [],
     links: Array.isArray(lighting.links) ? lighting.links.filter((link) => link && typeof link === "object") : []
   };
 }
@@ -1393,29 +1245,14 @@ function clearLightingRoomAssignment(rawLighting, roomId) {
     };
   });
 
-  const nextGroups = lighting.groups
-    .filter((group) => group?.roomId !== roomId)
-    .map((group) => ({
-      ...group,
-      fixtureIds: normalizeLightingGroupFixtureIds(group?.fixtureIds)
-    }));
-
-  if (!changed && nextGroups.length === lighting.groups.length) {
+  if (!changed) {
     return lighting;
   }
-
-  const removedGroupIds = new Set(
-    lighting.groups
-      .filter((group) => group?.roomId === roomId && typeof group?.id === "string" && group.id)
-      .map((group) => group.id)
-  );
-  const nextLinks = lighting.links.filter((link) => !(link?.targetType === "lampGroup" && removedGroupIds.has(link?.targetId)));
 
   return {
     ...lighting,
     fixtures: nextFixtures,
-    groups: nextGroups,
-    links: nextLinks
+    links: lighting.links
   };
 }
 
@@ -1431,30 +1268,15 @@ function cleanupLightingAfterFixtureDeletes(rawLighting, fixtureIds) {
   }
 
   const nextFixtures = lighting.fixtures.filter((fixture) => !fixtureIdSet.has(fixture?.id));
-  const nextGroups = lighting.groups
-    .map((group) => ({
-      ...group,
-      fixtureIds: normalizeLightingGroupFixtureIds(group?.fixtureIds)
-        .filter((fixtureId) => !fixtureIdSet.has(fixtureId))
-    }))
-    .filter((group) => group.fixtureIds.length > 0);
-  const removedGroupIds = new Set(
-    lighting.groups
-      .filter((group) => !nextGroups.some((nextGroup) => nextGroup.id === group?.id))
-      .map((group) => group?.id)
-      .filter((groupId) => typeof groupId === "string" && groupId)
-  );
 
   const nextLinks = lighting.links.filter((link) => (
     !fixtureIdSet.has(link?.switchId) &&
-    !(link?.targetType === "lamp" && fixtureIdSet.has(link?.targetId)) &&
-    !(link?.targetType === "lampGroup" && removedGroupIds.has(link?.targetId))
+    !(link?.targetType === "lamp" && fixtureIdSet.has(link?.targetId))
   ));
 
   return {
     ...lighting,
     fixtures: nextFixtures,
-    groups: nextGroups,
     links: nextLinks
   };
 }
@@ -1548,7 +1370,7 @@ function areLightingHostsEqual(a, b) {
 }
 
 function normalizeLightingLinkTargetType(value) {
-  if (value === "lamp" || value === "lampGroup") {
+  if (value === "lamp") {
     return value;
   }
   return null;
@@ -1562,13 +1384,6 @@ function hasLightingFixture(fixtures, fixtureId, kind = null) {
     fixture?.id === fixtureId &&
     (kind == null || fixture?.kind === kind)
   ));
-}
-
-function hasLightingGroup(groups, groupId) {
-  if (!Array.isArray(groups)) {
-    return false;
-  }
-  return groups.some((group) => group?.id === groupId);
 }
 
 function generateLightingLinkId(links) {
@@ -1587,65 +1402,6 @@ function generateLightingLinkId(links) {
     suffix += 1;
   }
   return `lk_${suffix}`;
-}
-
-function generateLightingGroupId(groups) {
-  const existing = new Set(
-    Array.isArray(groups)
-      ? groups
-        .filter((group) => typeof group?.id === "string" && group.id)
-        .map((group) => group.id)
-      : []
-  );
-  if (!existing.has("lg_1")) {
-    return "lg_1";
-  }
-  let suffix = 2;
-  while (existing.has(`lg_${suffix}`)) {
-    suffix += 1;
-  }
-  return `lg_${suffix}`;
-}
-
-function normalizeLightingGroupName(name, fallbackIndex = 1) {
-  const normalized = normalizeNonEmptyString(name);
-  if (normalized) {
-    return normalized;
-  }
-  return `Lamp Group ${fallbackIndex}`;
-}
-
-function inferLightingGroupRoomIdFromFixtures(fixtureIds, fixtureById) {
-  if (!Array.isArray(fixtureIds) || !(fixtureById instanceof Map) || fixtureIds.length === 0) {
-    return null;
-  }
-
-  let inferredRoomId = null;
-  for (const fixtureId of fixtureIds) {
-    const fixtureRoomId = normalizeNonEmptyString(fixtureById.get(fixtureId)?.roomId);
-    if (!fixtureRoomId) {
-      continue;
-    }
-    if (!inferredRoomId) {
-      inferredRoomId = fixtureRoomId;
-      continue;
-    }
-    if (inferredRoomId !== fixtureRoomId) {
-      return null;
-    }
-  }
-  return inferredRoomId;
-}
-
-function normalizeLightingGroupFixtureIds(fixtureIds) {
-  if (!Array.isArray(fixtureIds)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      fixtureIds.filter((fixtureId) => typeof fixtureId === "string" && fixtureId)
-    )
-  );
 }
 
 function normalizeScaleReferenceLinePayload(rawReferenceLine) {

@@ -341,9 +341,9 @@ function normalizeRooms(rawRooms) {
 function normalizeLighting(rawLighting) {
   const lighting = isPlainObject(rawLighting) ? rawLighting : {};
   const fixtures = normalizeLightingFixtures(lighting.fixtures);
-  const groups = normalizeLightingGroups(lighting.groups, fixtures);
-  const links = normalizeLightingLinks(lighting.links, fixtures, groups);
-  return { fixtures, groups, links };
+  const legacyGroupsById = buildLegacyLightingGroupIndex(lighting.groups, fixtures);
+  const links = normalizeLightingLinks(lighting.links, fixtures, legacyGroupsById);
+  return { fixtures, links };
 }
 
 function normalizeLightingFixtures(rawFixtures) {
@@ -432,25 +432,22 @@ function normalizeLightingFixtureHost(rawHost, kind) {
   };
 }
 
-function normalizeLightingGroups(rawGroups, fixtures) {
+function buildLegacyLightingGroupIndex(rawGroups, fixtures) {
+  const indexById = new Map();
   if (!Array.isArray(rawGroups)) {
-    return [];
+    return indexById;
   }
-
   const lampFixtureIds = new Set(
     fixtures
       .filter((fixture) => fixture?.kind === "lamp")
       .map((fixture) => fixture.id)
   );
-  const groups = [];
   for (let index = 0; index < rawGroups.length; index += 1) {
     const rawGroup = rawGroups[index];
     if (!isPlainObject(rawGroup)) {
       continue;
     }
-    const id = normalizeNonEmptyString(rawGroup.id) ?? `lg_migrated_${index + 1}`;
-    const name = normalizeNonEmptyString(rawGroup.name) ?? `Lamp Group ${index + 1}`;
-    const roomId = normalizeNonEmptyString(rawGroup.roomId);
+    const groupId = normalizeNonEmptyString(rawGroup.id) ?? `lg_migrated_${index + 1}`;
     const fixtureIds = Array.isArray(rawGroup.fixtureIds)
       ? Array.from(
         new Set(
@@ -463,19 +460,12 @@ function normalizeLightingGroups(rawGroups, fixtures) {
     if (fixtureIds.length === 0) {
       continue;
     }
-    groups.push({
-      id,
-      kind: "lampGroup",
-      name,
-      roomId: roomId ?? null,
-      fixtureIds,
-      meta: isPlainObject(rawGroup.meta) ? rawGroup.meta : {}
-    });
+    indexById.set(groupId, fixtureIds);
   }
-  return groups;
+  return indexById;
 }
 
-function normalizeLightingLinks(rawLinks, fixtures, groups) {
+function normalizeLightingLinks(rawLinks, fixtures, legacyGroupsById = new Map()) {
   if (!Array.isArray(rawLinks)) {
     return [];
   }
@@ -488,11 +478,6 @@ function normalizeLightingLinks(rawLinks, fixtures, groups) {
     fixtures
       .filter((fixture) => fixture?.kind === "lamp")
       .map((fixture) => fixture.id)
-  );
-  const groupIds = new Set(
-    groups
-      .filter((group) => typeof group?.id === "string" && group.id)
-      .map((group) => group.id)
   );
   const dedupeKey = new Set();
   const links = [];
@@ -510,23 +495,49 @@ function normalizeLightingLinks(rawLinks, fixtures, groups) {
     if (!switchId || !targetType || !targetId || !switchIds.has(switchId)) {
       continue;
     }
-    if (targetType === "lamp" && !lampIds.has(targetId)) {
+    const linkId = normalizeNonEmptyString(rawLink.id) ?? `lk_migrated_${index + 1}`;
+
+    if (targetType === "lamp") {
+      if (!lampIds.has(targetId)) {
+        continue;
+      }
+      const edgeKey = `${switchId}|lamp|${targetId}`;
+      if (dedupeKey.has(edgeKey)) {
+        continue;
+      }
+      dedupeKey.add(edgeKey);
+      links.push({
+        id: linkId,
+        switchId,
+        targetType: "lamp",
+        targetId
+      });
       continue;
     }
-    if (targetType === "lampGroup" && !groupIds.has(targetId)) {
+
+    const groupLampIds = legacyGroupsById instanceof Map
+      ? legacyGroupsById.get(targetId) ?? null
+      : null;
+    if (!Array.isArray(groupLampIds) || groupLampIds.length === 0) {
       continue;
     }
-    const edgeKey = `${switchId}|${targetType}|${targetId}`;
-    if (dedupeKey.has(edgeKey)) {
-      continue;
+    for (let lampIndex = 0; lampIndex < groupLampIds.length; lampIndex += 1) {
+      const lampId = groupLampIds[lampIndex];
+      if (!lampIds.has(lampId)) {
+        continue;
+      }
+      const edgeKey = `${switchId}|lamp|${lampId}`;
+      if (dedupeKey.has(edgeKey)) {
+        continue;
+      }
+      dedupeKey.add(edgeKey);
+      links.push({
+        id: lampIndex === 0 ? linkId : `${linkId}_${lampIndex + 1}`,
+        switchId,
+        targetType: "lamp",
+        targetId: lampId
+      });
     }
-    dedupeKey.add(edgeKey);
-    links.push({
-      id: normalizeNonEmptyString(rawLink.id) ?? `lk_migrated_${index + 1}`,
-      switchId,
-      targetType,
-      targetId
-    });
   }
 
   return links;

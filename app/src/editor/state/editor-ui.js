@@ -25,8 +25,7 @@ export function createInitialEditorState() {
     },
     lightingSelection: {
       fixtureId: null,
-      linkSwitchId: null,
-      groupId: null
+      linkSwitchId: null
     },
     lightingPreview: {
       switchStatesById: {}
@@ -194,32 +193,6 @@ export function editorUiReducer(state, action) {
         lightingSelection: {
           ...state.lightingSelection,
           fixtureId: null
-        }
-      };
-
-    case "editor/lightingSelection/setGroup": {
-      const groupId = normalizeGroupId(action.groupId);
-      if (state.lightingSelection.groupId === groupId) {
-        return state;
-      }
-      return {
-        ...state,
-        lightingSelection: {
-          ...state.lightingSelection,
-          groupId
-        }
-      };
-    }
-
-    case "editor/lightingSelection/clearGroup":
-      if (state.lightingSelection.groupId == null) {
-        return state;
-      }
-      return {
-        ...state,
-        lightingSelection: {
-          ...state.lightingSelection,
-          groupId: null
         }
       };
 
@@ -646,14 +619,6 @@ function normalizeFixtureId(fixtureId) {
     return null;
   }
   const trimmed = fixtureId.trim();
-  return trimmed || null;
-}
-
-function normalizeGroupId(groupId) {
-  if (typeof groupId !== "string") {
-    return null;
-  }
-  const trimmed = groupId.trim();
   return trimmed || null;
 }
 

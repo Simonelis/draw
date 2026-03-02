@@ -15,7 +15,6 @@ test("createEmptyPlan includes lighting collections", () => {
   const plan = createEmptyPlan();
   assertDeepEqual(plan.entities.lighting, {
     fixtures: [],
-    groups: [],
     links: []
   });
 });
@@ -739,7 +738,6 @@ test("plan reducer moving rectangle keeps hosted switches and lamps glued", () =
             meta: { label: null }
           }
         ],
-        groups: [],
         links: []
       }
     }
@@ -759,7 +757,7 @@ test("plan reducer moving rectangle keeps hosted switches and lamps glued", () =
   assertEqual(movedLamp.y, 290);
 });
 
-test("plan reducer creates and deletes lamp groups and linked edges", () => {
+test("plan reducer ignores deprecated lampGroup link targets", () => {
   const base = createEmptyPlan();
   const withSwitch = planReducer(base, {
     type: "plan/lighting/addFixture",
@@ -791,28 +789,11 @@ test("plan reducer creates and deletes lamp groups and linked edges", () => {
     roomId: "room_a"
   });
 
-  const grouped = planReducer(withLampB, {
-    type: "plan/lighting/createGroupFromLamps",
-    groupId: "lg_user_1",
-    roomId: "room_a",
-    name: "Kitchen Spots",
-    fixtureIds: ["fx_l1", "fx_l2"]
-  });
-  assertEqual(grouped.entities.lighting.groups.length, 1);
-  assertEqual(grouped.entities.lighting.groups[0].id, "lg_user_1");
-
-  const linked = planReducer(grouped, {
+  const linked = planReducer(withLampB, {
     type: "plan/lighting/linkSwitch",
     switchId: "fx_s1",
     targetType: "lampGroup",
     targetId: "lg_user_1"
   });
-  assertEqual(linked.entities.lighting.links.length, 1);
-
-  const deletedGroup = planReducer(linked, {
-    type: "plan/lighting/deleteGroup",
-    groupId: "lg_user_1"
-  });
-  assertEqual(deletedGroup.entities.lighting.groups.length, 0);
-  assertEqual(deletedGroup.entities.lighting.links.length, 0);
+  assert(linked === withLampB, "Deprecated lampGroup target should no-op.");
 });
