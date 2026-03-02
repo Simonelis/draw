@@ -1,6 +1,6 @@
 import { deriveBaseboardCandidates } from "../../src/editor/geometry/baseboards.js";
 import { BASEBOARD_ALGO_VERSION, deriveBaseboardExportSnapshot } from "../../src/editor/geometry/baseboard-snapshot.js";
-import { assertClose, assertDeepEqual, assertEqual, test } from "../test-runner.js";
+import { assert, assertClose, assertDeepEqual, assertEqual, test } from "../test-runner.js";
 
 function createPlan(rectangles, rooms = [], metersPerWorldUnit = 0.01) {
   return {
@@ -61,6 +61,9 @@ test("baseboard export snapshot includes deterministic metadata and totals", () 
   assertEqual(snapshot.segments.raw.length, 2);
   assertEqual(snapshot.segments.counted.length, 1);
   assertEqual(snapshot.segments.excluded.length, 1);
+  assertEqual(Array.isArray(snapshot.boundarySegments), true);
+  assert(snapshot.boundarySegments.some((segment) => segment.kind === "interior_perimeter"));
+  assert(snapshot.boundarySegments.some((segment) => segment.kind === "excluded"));
 });
 
 test("baseboard export snapshot emits empty-safe structure", () => {
@@ -90,5 +93,6 @@ test("baseboard export snapshot emits empty-safe structure", () => {
   assertEqual(snapshot.segments.counted.length, 0);
   assertEqual(snapshot.segments.excluded.length, 0);
   assertEqual(snapshot.segments.unsupportedOpenSides.length, 0);
+  assertEqual(snapshot.boundarySegments.length, 0);
   assertEqual(snapshot.sharedBoundaries.length, 0);
 });

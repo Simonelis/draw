@@ -133,6 +133,8 @@ export function mountEditorRuntime(options) {
   let lastValidationResult = null;
   let lastBaseboardPlan = null;
   let lastBaseboardResult = null;
+  let lastBaseboardConflictSource = null;
+  let lastBaseboardConflictResult = null;
   let lastLockedSeamsPlan = null;
   let lastLockedSeamSides = null;
   let nextUserRectangleId = deriveNextUserRectangleId(store.getState().plan);
@@ -1146,6 +1148,12 @@ export function mountEditorRuntime(options) {
     });
   }
 
+  if (controls.baseboardConflictToggleButton) {
+    controls.baseboardConflictToggleButton.addEventListener("click", () => {
+      store.dispatch({ type: "editor/debug/toggleBaseboardConflictOverlay" });
+    });
+  }
+
   if (controls.deleteSelectedButton) {
     controls.deleteSelectedButton.addEventListener("click", () => {
       deleteSelectedRectangle();
@@ -1550,6 +1558,10 @@ export function mountEditorRuntime(options) {
   ) {
     const { camera, selection } = editorState;
     const showBaseboardOverlay = isBaseboardOverlayEnabled(editorState);
+    const showBaseboardConflictOverlay = isBaseboardConflictOverlayEnabled(editorState);
+    const baseboardConflicts = (showBaseboardOverlay || showBaseboardConflictOverlay)
+      ? getBaseboardConflictResult(plan, baseboard)
+      : null;
     ctx.save();
     ctx.setTransform(
       dpr * camera.zoom,
@@ -1577,6 +1589,9 @@ export function mountEditorRuntime(options) {
     if (showBaseboardOverlay) {
       drawBaseboardDebugSegments(ctx, baseboard, camera);
     }
+    if (showBaseboardConflictOverlay) {
+      drawBaseboardConflictSegments(ctx, baseboardConflicts, camera);
+    }
     drawValidationOverlapFlash(ctx, plan, validation, camera, timestamp);
     drawSelectedResizeHandles(ctx, plan, editorState, lockedSeamSides);
     drawDraftRectangle(ctx, editorState, camera);
@@ -1590,6 +1605,8 @@ export function mountEditorRuntime(options) {
   function drawScreenOverlay(ctx, editorState, plan, validation, baseboard, hover, cssWidth, cssHeight, timestamp) {
     const { camera } = editorState;
     const showBaseboardOverlay = isBaseboardOverlayEnabled(editorState);
+    const showBaseboardConflictOverlay = isBaseboardConflictOverlayEnabled(editorState);
+    const baseboardConflicts = getBaseboardConflictResult(plan, baseboard);
     const selectedRectangle = getSelectedRectangle(plan, editorState);
     const originScreen = worldToScreen(camera, 0, 0);
 
@@ -1615,8 +1632,8 @@ export function mountEditorRuntime(options) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.strokeStyle = "rgba(0,0,0,0.15)";
     ctx.lineWidth = 1;
-    ctx.fillRect(12, 12, 470, 154);
-    ctx.strokeRect(12, 12, 470, 154);
+    ctx.fillRect(12, 12, 470, 172);
+    ctx.strokeRect(12, 12, 470, 172);
 
     ctx.fillStyle = "#1f1f1f";
     ctx.font = "12px Georgia, serif";
@@ -1636,6 +1653,7 @@ export function mountEditorRuntime(options) {
     ctx.fillText(`File IO: ${formatFileTransferStatusShort(fileTransferStatus)}`, 180, 98);
     ctx.fillText(`Baseboard: ${formatBaseboardSummaryDebug(baseboard, showBaseboardOverlay)}`, 20, 114);
     ctx.fillText(`Overlap flash: ${formatValidationOverlapFlashDebug(validation, timestamp)}`, 20, 130);
+    ctx.fillText(`BB conflicts: ${formatBaseboardConflictSummaryOverlay(baseboardConflicts, showBaseboardConflictOverlay)}`, 20, 146);
     ctx.restore();
 
     drawSelectedRectangleDimensionLabels(ctx, editorState, plan, hover, cssWidth, cssHeight);
@@ -1655,6 +1673,8 @@ export function mountEditorRuntime(options) {
 
   function updateUiReadouts(editorState, plan, validation, baseboard, timestamp) {
     const showBaseboardOverlay = isBaseboardOverlayEnabled(editorState);
+    const showBaseboardConflictOverlay = isBaseboardConflictOverlayEnabled(editorState);
+    const baseboardConflicts = getBaseboardConflictResult(plan, baseboard);
     frameCount += 1;
     framesSinceSample += 1;
     const sampleDuration = timestamp - lastFpsSampleMs;
@@ -1677,8 +1697,10 @@ export function mountEditorRuntime(options) {
       const selectedKindLabel = formatSelectedRectangleKindStatus(selectedRectangle);
       const selectedRoomLabel = formatSelectedRectangleRoomTagStatus(selectedRectangle, plan);
       const validationLabel = formatValidationSummaryStatus(validation);
+      const closureLabel = formatClosureValidationStatus(validation);
       const overlapFlashLabel = formatValidationOverlapFlashStatus(validation, timestamp);
       const baseboardLabel = formatBaseboardSummaryStatus(baseboard, showBaseboardOverlay);
+      const conflictLabel = formatBaseboardConflictSummaryStatus(baseboardConflicts, showBaseboardConflictOverlay);
       const fileIoLabel = formatFileTransferStatusShort(fileTransferStatus);
       const mergeSelectionCount = Array.isArray(editorState.mergeSelection?.rectangleIds)
         ? editorState.mergeSelection.rectangleIds.length
@@ -1698,7 +1720,7 @@ export function mountEditorRuntime(options) {
       const openingCount = Array.isArray(plan?.entities?.openings) ? plan.entities.openings.length : 0;
       const wallHeightMeters = getPlanWallHeightMeters(plan);
       statusElement.textContent =
-        `T-0030/0031/0032 paint+openings+lighting | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | overlap ${overlapFlashLabel} | ${baseboardLabel} | paint h:${wallHeightMeters.toFixed(2)}m | openings ${openingCount} sel:${selectedOpeningLabel} | lights s:${lightingTotals.switchCount} l:${lightingTotals.lampCount} lk:${lightingTotals.linkCount} sel:${selectedFixtureLabel} | file ${fileIoLabel} | tool ${tool} | pan | wheel zoom | ` +
+        `T-0027/0028/0029 + T-0030/0031/0032 | ${backgroundLabel} | ${scaleLabel} | ${autosaveLabel} | ${validationLabel} | ${closureLabel} | overlap ${overlapFlashLabel} | ${baseboardLabel} | ${conflictLabel} | paint h:${wallHeightMeters.toFixed(2)}m | openings ${openingCount} sel:${selectedOpeningLabel} | lights s:${lightingTotals.switchCount} l:${lightingTotals.lampCount} lk:${lightingTotals.linkCount} sel:${selectedFixtureLabel} | file ${fileIoLabel} | tool ${tool} | pan | wheel zoom | ` +
         `camera ${camera.x.toFixed(1)}, ${camera.y.toFixed(1)} | ` +
         `zoom ${camera.zoom.toFixed(2)}x | merge ${mergeSelectionCount} ${internalSlideMode} | ${geometryLockMode} | active-room ${activeRoomId ?? "none"} | ` +
         `rects ${plan.entities.rectangles.length} | selected ${selectedId}${selectedKindLabel ? ` (${selectedKindLabel})` : ""}${selectedDimsLabel ? ` ${selectedDimsLabel}` : ""}${selectedWallLabel ? ` [${selectedWallLabel}]` : ""}${selectedRoomLabel ? ` {${selectedRoomLabel}}` : ""} | ` +
@@ -1714,6 +1736,7 @@ export function mountEditorRuntime(options) {
         `${Math.round(plan.background.transform.x)}, ${Math.round(plan.background.transform.y)}.<br>` +
         `${formatScaleDetail(plan.scale)}. Use Calibrate Scale for a reference line or Calibrate by Area with an active room.<br>` +
         `Baseboard candidates: ${formatBaseboardSummaryOverlay(baseboard, showBaseboardOverlay)}.<br>` +
+        `Baseboard conflicts: ${formatBaseboardConflictSummaryOverlay(baseboardConflicts, showBaseboardConflictOverlay)}.<br>` +
         `Painting wall height: ${getPlanWallHeightMeters(plan).toFixed(2)}m.<br>` +
         `Openings: ${formatOpeningOverlaySummary(plan, editorState)}.<br>` +
         `Lighting: ${formatLightingOverlaySummary(plan, editorState)}.<br>` +
@@ -1722,9 +1745,11 @@ export function mountEditorRuntime(options) {
         `Selected dimensions: ${formatSelectedRectangleDimensionsOverlay(selectedRectangle, plan.scale)}.<br>` +
         `Selected wall cm: ${formatSelectedRectangleWallCmOverlay(selectedRectangle)}.<br>` +
         `Validation: ${formatValidationDetail(validation)}.<br>` +
+        `Closure: ${formatClosureValidationOverlay(validation)}.<br>` +
         `Overlap flash: ${formatValidationOverlapFlashOverlay(validation, timestamp)}.<br>` +
         `File I/O: ${formatFileTransferStatusDetail(fileTransferStatus)}.<br>` +
         `Geometry lock: ${isGeometryEditingFrozen(editorState) ? "ON (rectangles cannot move/resize/change kind)" : "OFF"}.<br>` +
+        `Baseboard Debug colors: red=counted, amber dashed=excluded, blue dashed=closure gaps. Baseboard Conflicts toggle draws magenta conflict intervals.<br>` +
         `Openings: Place Door/Place Window by clicking near a wall side; drag segment to slide; drag white endpoints to resize on wall.<br>` +
         `Lighting quick use: double-click a switch in Navigate to toggle linked lamps; drag to move switch/lamp.<br>` +
         `Link mode: click switch (source), click lamps to link/unlink. Unplug Selected removes links for selected lamp/switch.<br>` +
@@ -1742,11 +1767,12 @@ export function mountEditorRuntime(options) {
     const basicValidation = validateBasicPlanGeometry(plan);
     const lightingFindings = deriveLightingValidationFindings(plan);
     const openingFindings = deriveOpeningValidationFindings(plan);
-    if (lightingFindings.length === 0 && openingFindings.length === 0) {
+    const closureFindings = deriveClosureValidationFindings(getBaseboardResult(plan), plan.scale?.metersPerWorldUnit);
+    if (lightingFindings.length === 0 && openingFindings.length === 0 && closureFindings.length === 0) {
       lastValidationResult = basicValidation;
       return lastValidationResult;
     }
-    const findings = [...basicValidation.findings, ...lightingFindings, ...openingFindings];
+    const findings = [...basicValidation.findings, ...lightingFindings, ...openingFindings, ...closureFindings];
     const warningCount = findings.filter((finding) => finding.severity === "warning").length;
     const infoCount = findings.filter((finding) => finding.severity === "info").length;
     lastValidationResult = {
@@ -1768,6 +1794,19 @@ export function mountEditorRuntime(options) {
       excludedRoomTypes: BASEBOARD_EXCLUDED_ROOM_TYPES
     });
     return lastBaseboardResult;
+  }
+
+  function getBaseboardConflictResult(plan, baseboard) {
+    if (baseboard === lastBaseboardConflictSource && lastBaseboardConflictResult) {
+      return lastBaseboardConflictResult;
+    }
+    lastBaseboardConflictSource = baseboard;
+    lastBaseboardConflictResult = deriveBaseboardConflictOverlay(
+      baseboard,
+      plan?.scale?.metersPerWorldUnit,
+      baseboard?.overlapToleranceWorld
+    );
+    return lastBaseboardConflictResult;
   }
 
   function getLockedSeamSides(plan) {
@@ -1838,6 +1877,12 @@ export function mountEditorRuntime(options) {
       controls.baseboardDebugToggleButton.setAttribute(
         "aria-pressed",
         isBaseboardOverlayEnabled(state) ? "true" : "false"
+      );
+    }
+    if (controls.baseboardConflictToggleButton) {
+      controls.baseboardConflictToggleButton.setAttribute(
+        "aria-pressed",
+        isBaseboardConflictOverlayEnabled(state) ? "true" : "false"
       );
     }
     if (controls.deleteSelectedButton) {
@@ -4318,6 +4363,34 @@ function deriveOpeningValidationFindings(plan) {
   return findings;
 }
 
+function deriveClosureValidationFindings(baseboard, metersPerWorldUnit = null) {
+  const unsupportedSegments = Array.isArray(baseboard?.unsupportedOpenSides)
+    ? baseboard.unsupportedOpenSides
+    : [];
+  if (unsupportedSegments.length === 0) {
+    return [];
+  }
+  const totalLengthWorld = unsupportedSegments.reduce(
+    (sum, segment) => sum + (Number.isFinite(segment?.lengthWorld) ? segment.lengthWorld : 0),
+    0
+  );
+  const totalLengthMeters = Number.isFinite(metersPerWorldUnit) && metersPerWorldUnit > 0
+    ? totalLengthWorld * metersPerWorldUnit
+    : null;
+  const lengthLabel = Number.isFinite(totalLengthMeters)
+    ? `${totalLengthMeters.toFixed(2)}m`
+    : `${totalLengthWorld.toFixed(1)}wu`;
+
+  return [
+    {
+      code: "closure_gap_detected",
+      severity: "warning",
+      message: `${unsupportedSegments.length} closure gap segment${unsupportedSegments.length === 1 ? "" : "s"} totaling ${lengthLabel}`,
+      count: unsupportedSegments.length
+    }
+  ];
+}
+
 function countInvalidOpeningHosts(openings, rectangleById) {
   if (!Array.isArray(openings) || !(rectangleById instanceof Map)) {
     return 0;
@@ -4527,6 +4600,167 @@ function formatLengthMetersOrWorld(valueSource, metersKey, worldKey) {
   return "n/a";
 }
 
+function formatBaseboardConflictSummaryStatus(conflicts, showOverlay) {
+  const visibility = showOverlay ? "bb-conf:on" : "bb-conf:off";
+  if (!conflicts) {
+    return `${visibility} c:0`;
+  }
+  return `${visibility} c:${conflicts.conflictCount} len:${formatConflictLength(conflicts)}`;
+}
+
+function formatBaseboardConflictSummaryOverlay(conflicts, showOverlay) {
+  const visibility = showOverlay ? "visible" : "hidden";
+  if (!conflicts) {
+    return `0 intervals (${visibility})`;
+  }
+  return `${conflicts.conflictCount} interval${conflicts.conflictCount === 1 ? "" : "s"}, total ${formatConflictLength(conflicts)} (${visibility})`;
+}
+
+function formatConflictLength(conflicts) {
+  if (!conflicts) {
+    return "0.0wu";
+  }
+  if (Number.isFinite(conflicts.totalLengthMeters)) {
+    return `${conflicts.totalLengthMeters.toFixed(2)}m`;
+  }
+  if (Number.isFinite(conflicts.totalLengthWorld)) {
+    return `${conflicts.totalLengthWorld.toFixed(1)}wu`;
+  }
+  return "n/a";
+}
+
+function deriveBaseboardConflictOverlay(baseboard, metersPerWorldUnit = null, overlapToleranceWorld = 0.5) {
+  const countedSegments = Array.isArray(baseboard?.segments) ? baseboard.segments : [];
+  if (countedSegments.length < 2) {
+    return {
+      segments: [],
+      conflictCount: 0,
+      pairCount: 0,
+      totalLengthWorld: 0,
+      totalLengthMeters: Number.isFinite(metersPerWorldUnit) ? 0 : null
+    };
+  }
+
+  const tolerance = Number.isFinite(overlapToleranceWorld) && overlapToleranceWorld > 0
+    ? overlapToleranceWorld
+    : 0.5;
+  const intervalsByLine = new Map();
+  let pairCount = 0;
+
+  for (let index = 0; index < countedSegments.length; index += 1) {
+    const left = deriveAxisAlignedSegmentDescriptor(countedSegments[index]);
+    if (!left) {
+      continue;
+    }
+    for (let otherIndex = index + 1; otherIndex < countedSegments.length; otherIndex += 1) {
+      const right = deriveAxisAlignedSegmentDescriptor(countedSegments[otherIndex]);
+      if (!right || right.axis !== left.axis) {
+        continue;
+      }
+      if (Math.abs(right.coordinate - left.coordinate) > tolerance) {
+        continue;
+      }
+      const overlapStart = Math.max(left.start, right.start);
+      const overlapEnd = Math.min(left.end, right.end);
+      if (!(overlapEnd - overlapStart > tolerance)) {
+        continue;
+      }
+      pairCount += 1;
+      const lineCoordinate = (left.coordinate + right.coordinate) / 2;
+      const lineKey = `${left.axis}:${lineCoordinate.toFixed(3)}`;
+      if (!intervalsByLine.has(lineKey)) {
+        intervalsByLine.set(lineKey, {
+          axis: left.axis,
+          coordinate: lineCoordinate,
+          intervals: []
+        });
+      }
+      intervalsByLine.get(lineKey).intervals.push({
+        start: overlapStart,
+        end: overlapEnd
+      });
+    }
+  }
+
+  const segments = [];
+  for (const [lineKey, entry] of intervalsByLine.entries()) {
+    const merged = mergeSimpleIntervals(entry.intervals);
+    for (let intervalIndex = 0; intervalIndex < merged.length; intervalIndex += 1) {
+      const interval = merged[intervalIndex];
+      const lengthWorld = Math.max(0, interval.end - interval.start);
+      if (lengthWorld <= 0) {
+        continue;
+      }
+      const segmentId = `${lineKey}:${intervalIndex + 1}`;
+      if (entry.axis === "horizontal") {
+        segments.push({
+          id: segmentId,
+          axis: "horizontal",
+          coordinate: entry.coordinate,
+          start: interval.start,
+          end: interval.end,
+          lengthWorld,
+          lengthMeters: Number.isFinite(metersPerWorldUnit) ? lengthWorld * metersPerWorldUnit : null,
+          x0: interval.start,
+          y0: entry.coordinate,
+          x1: interval.end,
+          y1: entry.coordinate
+        });
+      } else {
+        segments.push({
+          id: segmentId,
+          axis: "vertical",
+          coordinate: entry.coordinate,
+          start: interval.start,
+          end: interval.end,
+          lengthWorld,
+          lengthMeters: Number.isFinite(metersPerWorldUnit) ? lengthWorld * metersPerWorldUnit : null,
+          x0: entry.coordinate,
+          y0: interval.start,
+          x1: entry.coordinate,
+          y1: interval.end
+        });
+      }
+    }
+  }
+
+  const totalLengthWorld = segments.reduce((sum, segment) => sum + (segment.lengthWorld ?? 0), 0);
+  return {
+    segments,
+    conflictCount: segments.length,
+    pairCount,
+    totalLengthWorld,
+    totalLengthMeters: Number.isFinite(metersPerWorldUnit) ? totalLengthWorld * metersPerWorldUnit : null
+  };
+}
+
+function deriveAxisAlignedSegmentDescriptor(segment) {
+  const x0 = Number.isFinite(segment?.x0) ? segment.x0 : null;
+  const y0 = Number.isFinite(segment?.y0) ? segment.y0 : null;
+  const x1 = Number.isFinite(segment?.x1) ? segment.x1 : null;
+  const y1 = Number.isFinite(segment?.y1) ? segment.y1 : null;
+  if (x0 == null || y0 == null || x1 == null || y1 == null) {
+    return null;
+  }
+  if (Math.abs(y1 - y0) <= 1e-6) {
+    return {
+      axis: "horizontal",
+      coordinate: (y0 + y1) / 2,
+      start: Math.min(x0, x1),
+      end: Math.max(x0, x1)
+    };
+  }
+  if (Math.abs(x1 - x0) <= 1e-6) {
+    return {
+      axis: "vertical",
+      coordinate: (x0 + x1) / 2,
+      start: Math.min(y0, y1),
+      end: Math.max(y0, y1)
+    };
+  }
+  return null;
+}
+
 function formatValidationSummaryDebug(validation) {
   if (!validation || validation.status === "ok") {
     return "OK";
@@ -4539,6 +4773,27 @@ function formatValidationSummaryStatus(validation) {
     return "validation ok";
   }
   return `validation warn:${validation.warningCount}`;
+}
+
+function formatClosureValidationStatus(validation) {
+  const closureFinding = findClosureValidationFinding(validation);
+  if (!closureFinding) {
+    return "closure ok";
+  }
+  return `closure warn:${closureFinding.count ?? 1}`;
+}
+
+function formatClosureValidationOverlay(validation) {
+  const closureFinding = findClosureValidationFinding(validation);
+  if (!closureFinding) {
+    return "No closure gaps detected";
+  }
+  return closureFinding.message;
+}
+
+function findClosureValidationFinding(validation) {
+  const findings = Array.isArray(validation?.findings) ? validation.findings : [];
+  return findings.find((finding) => finding?.code === "closure_gap_detected") ?? null;
 }
 
 function formatValidationPrimaryMessage(validation) {
@@ -5651,6 +5906,10 @@ function isBaseboardOverlayEnabled(editorState) {
   return Boolean(editorState?.debug?.showBaseboardOverlay);
 }
 
+function isBaseboardConflictOverlayEnabled(editorState) {
+  return Boolean(editorState?.debug?.showBaseboardConflictOverlay);
+}
+
 function drawDebugRectangles(
   ctx,
   plan,
@@ -6672,7 +6931,8 @@ function drawBaseboardDebugSegments(ctx, baseboard, camera) {
   }
   const countedSegments = Array.isArray(baseboard.segments) ? baseboard.segments : [];
   const excludedSegments = Array.isArray(baseboard.excludedSegments) ? baseboard.excludedSegments : [];
-  if (countedSegments.length === 0 && excludedSegments.length === 0) {
+  const unsupportedOpenSides = Array.isArray(baseboard.unsupportedOpenSides) ? baseboard.unsupportedOpenSides : [];
+  if (countedSegments.length === 0 && excludedSegments.length === 0 && unsupportedOpenSides.length === 0) {
     return;
   }
 
@@ -6703,6 +6963,42 @@ function drawBaseboardDebugSegments(ctx, baseboard, camera) {
     }
   }
 
+  if (unsupportedOpenSides.length > 0) {
+    ctx.strokeStyle = "rgba(32, 92, 194, 0.94)";
+    ctx.lineWidth = 4 / camera.zoom;
+    ctx.setLineDash([8 / camera.zoom, 6 / camera.zoom]);
+    for (const segment of unsupportedOpenSides) {
+      ctx.beginPath();
+      ctx.moveTo(segment.x0, segment.y0);
+      ctx.lineTo(segment.x1, segment.y1);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  ctx.restore();
+}
+
+function drawBaseboardConflictSegments(ctx, conflicts, camera) {
+  const segments = Array.isArray(conflicts?.segments) ? conflicts.segments : [];
+  if (segments.length === 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(192, 32, 143, 0.95)";
+  ctx.lineWidth = 7 / camera.zoom;
+  ctx.setLineDash([10 / camera.zoom, 6 / camera.zoom]);
+  ctx.lineCap = "round";
+
+  for (const segment of segments) {
+    ctx.beginPath();
+    ctx.moveTo(segment.x0, segment.y0);
+    ctx.lineTo(segment.x1, segment.y1);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
   ctx.restore();
 }
 

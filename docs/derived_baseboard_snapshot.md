@@ -25,6 +25,7 @@
     "excluded": { "world": null, "meters": null },
     "pruned": { "world": null, "meters": null }
   },
+  "boundarySegments": [],
   "segments": {
     "candidates": [],
     "raw": [],
@@ -41,4 +42,5 @@
 - `raw` = derived before room-type exclusions.
 - `counted` = after exclusions (used for quantity totals).
 - `excluded` = removed by room-type exclusion rules.
+- `boundarySegments[*].kind` uses: `interior_perimeter`, `opening`, `excluded`, `debug_only`.
 - Snapshot is intended for repro/diff and may evolve with `algoVersion`.

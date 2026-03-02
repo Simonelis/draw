@@ -29,6 +29,7 @@ export function deriveBaseboardExportSnapshot(baseboard, options = {}) {
       excluded: deriveLengthShape(baseboard, "excludedLengthWorld", "excludedLengthMeters"),
       pruned: deriveLengthShape(baseboard, "prunedLengthWorld", "prunedLengthMeters")
     },
+    boundarySegments: normalizeBoundarySegments(baseboard?.boundarySegments),
     segments: {
       candidates: normalizeSegments(baseboard?.candidateSegments),
       raw: normalizeSegments(baseboard?.rawSegments ?? baseboard?.segments),
@@ -85,6 +86,36 @@ function normalizeSharedBoundaries(rawBoundaries) {
     }));
 }
 
+function normalizeBoundarySegments(rawSegments) {
+  if (!Array.isArray(rawSegments)) {
+    return [];
+  }
+  return rawSegments
+    .filter((segment) => segment && typeof segment === "object")
+    .map((segment) => ({
+      id: typeof segment.id === "string" ? segment.id : null,
+      sourceSegmentId: typeof segment.sourceSegmentId === "string" ? segment.sourceSegmentId : null,
+      kind: normalizeBoundaryKind(segment.kind),
+      source: typeof segment.source === "string" ? segment.source : null,
+      roomId: typeof segment.roomId === "string" ? segment.roomId : null,
+      rectangleId: typeof segment.rectangleId === "string" ? segment.rectangleId : null,
+      side: normalizeSide(segment.side),
+      axis: normalizeAxis(segment.axis),
+      start: toFiniteOrNull(segment.start),
+      end: toFiniteOrNull(segment.end),
+      coordinate: toFiniteOrNull(segment.coordinate),
+      x0: toFiniteOrNull(segment.x0),
+      y0: toFiniteOrNull(segment.y0),
+      x1: toFiniteOrNull(segment.x1),
+      y1: toFiniteOrNull(segment.y1),
+      lengthWorld: toFiniteOrNull(segment.lengthWorld),
+      lengthMeters: toFiniteOrNull(segment.lengthMeters),
+      wallSource: typeof segment.wallSource === "string" ? segment.wallSource : null,
+      openingId: typeof segment.openingId === "string" ? segment.openingId : null,
+      openingKind: segment.openingKind === "door" || segment.openingKind === "window" ? segment.openingKind : null
+    }));
+}
+
 function normalizeBoundarySide(rawSide) {
   if (!rawSide || typeof rawSide !== "object") {
     return null;
@@ -116,6 +147,18 @@ function normalizeSide(side) {
 function normalizeAxis(axis) {
   if (axis === "horizontal" || axis === "vertical") {
     return axis;
+  }
+  return null;
+}
+
+function normalizeBoundaryKind(kind) {
+  if (
+    kind === "interior_perimeter" ||
+    kind === "opening" ||
+    kind === "excluded" ||
+    kind === "debug_only"
+  ) {
+    return kind;
   }
   return null;
 }

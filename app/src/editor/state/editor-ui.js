@@ -43,7 +43,8 @@ export function createInitialEditorState() {
       geometryFrozen: false
     },
     debug: {
-      showBaseboardOverlay: false
+      showBaseboardOverlay: false,
+      showBaseboardConflictOverlay: false
     },
     interaction: {
       mode: "idle",
@@ -312,6 +313,29 @@ export function editorUiReducer(state, action) {
         debug: {
           ...state.debug,
           showBaseboardOverlay: show
+        }
+      };
+    }
+
+    case "editor/debug/toggleBaseboardConflictOverlay":
+      return {
+        ...state,
+        debug: {
+          ...state.debug,
+          showBaseboardConflictOverlay: !Boolean(state.debug?.showBaseboardConflictOverlay)
+        }
+      };
+
+    case "editor/debug/setBaseboardConflictOverlay": {
+      const show = Boolean(action.show);
+      if (Boolean(state.debug?.showBaseboardConflictOverlay) === show) {
+        return state;
+      }
+      return {
+        ...state,
+        debug: {
+          ...state.debug,
+          showBaseboardConflictOverlay: show
         }
       };
     }

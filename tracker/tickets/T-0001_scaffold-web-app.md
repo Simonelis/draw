@@ -12,13 +12,13 @@ Status history (append-only):
 Have a real “app workspace” (not just a double-clicked HTML file) that we can evolve safely.
 
 ## Acceptance criteria
-- [ ] Repo has a runnable local dev server (hot reload).
-- [ ] App opens to an empty editor shell page we can iterate on.
+- [x] Repo has a runnable local dev server (hot reload).
+- [x] App opens to an empty editor shell page we can iterate on.
 
 ### Update (2026-02-25)
 Decision: vanilla JS + ESM modules; no TypeScript required (see `tracker/decisions/ADR-0001_vanilla-js-esm.md`).
-- [ ] No TypeScript build step; plain `.js` modules.
-- [ ] Hot reload is optional; manual refresh is acceptable for MVP.
+- [x] No TypeScript build step; plain `.js` modules.
+- [x] Hot reload is optional; manual refresh is acceptable for MVP.
 
 ## Notes / formulation
 This is intentionally boring but unlocks persistence, modularization, and future testing.

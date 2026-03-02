@@ -64,6 +64,7 @@ export function createEditorShell(root) {
   const importJsonButton = root.querySelector("[data-editor-action='plan-import-json']");
   const importJsonFileInput = root.querySelector("[data-editor-file-input='plan-import']");
   const baseboardDebugToggleButton = root.querySelector("[data-editor-action='debug-baseboard-toggle']");
+  const baseboardConflictToggleButton = root.querySelector("[data-editor-action='debug-baseboard-conflicts-toggle']");
   const backgroundOpacityDownButton = root.querySelector("[data-editor-action='bg-opacity-down']");
   const backgroundOpacityUpButton = root.querySelector("[data-editor-action='bg-opacity-up']");
   const backgroundMoveLeftButton = root.querySelector("[data-editor-action='bg-move-left']");
@@ -141,6 +142,7 @@ export function createEditorShell(root) {
       importJsonButton,
       importJsonFileInput,
       baseboardDebugToggleButton,
+      baseboardConflictToggleButton,
       backgroundOpacityDownButton,
       backgroundOpacityUpButton,
       backgroundMoveLeftButton,
@@ -302,6 +304,7 @@ function buildShell() {
         <button type="button" data-editor-action="plan-import-json">Import JSON</button>
         <input type="file" accept="application/json,.json" data-editor-file-input="plan-import" hidden>
         <button type="button" data-editor-action="debug-baseboard-toggle" aria-pressed="false">Baseboard Debug</button>
+        <button type="button" data-editor-action="debug-baseboard-conflicts-toggle" aria-pressed="false">Baseboard Conflicts</button>
         <span class="toolbar-inline-status" data-scale-status>Scale not calibrated</span>
         <details class="toolbar-disclosure bg-controls">
           <summary>

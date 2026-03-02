@@ -95,12 +95,21 @@ export function deriveBaseboardCandidates(plan, options = {}) {
     plan,
     options.excludedRoomTypes
   );
+  const openingSegments = deriveOpeningBoundarySegments(plan, metersPerWorldUnit);
+  const boundarySegments = buildBoundarySegmentsModel({
+    countedSegments,
+    excludedSegments,
+    candidateSegments,
+    unsupportedOpenSides,
+    openingSegments,
+    metersPerWorldUnit
+  });
 
-  const totalLengthWorld = sumSegmentLength(countedSegments);
+  const totalLengthWorld = sumBoundaryLengthByKind(boundarySegments, "interior_perimeter");
   const totalLengthMeters = metersPerWorldUnit ? totalLengthWorld * metersPerWorldUnit : null;
   const rawTotalLengthWorld = sumSegmentLength(rawSegments);
   const rawTotalLengthMeters = metersPerWorldUnit ? rawTotalLengthWorld * metersPerWorldUnit : null;
-  const excludedLengthWorld = sumSegmentLength(excludedSegments);
+  const excludedLengthWorld = sumBoundaryLengthByKind(boundarySegments, "excluded");
   const excludedLengthMeters = metersPerWorldUnit != null ? excludedLengthWorld * metersPerWorldUnit : null;
   const candidateTotalLengthWorld = sumSegmentLength(candidateSegments);
   const candidateTotalLengthMeters = metersPerWorldUnit ? candidateTotalLengthWorld * metersPerWorldUnit : null;
@@ -113,6 +122,10 @@ export function deriveBaseboardCandidates(plan, options = {}) {
     excludedSegments,
     excludedSegmentCount: excludedSegments.length,
     excludedRoomTypes: Array.from(excludedRoomTypes),
+    openingSegments,
+    openingSegmentCount: openingSegments.length,
+    boundarySegments,
+    boundarySegmentCount: boundarySegments.length,
     candidateSegments,
     candidateSegmentCount: candidateSegments.length,
     prunedSegmentCount: Math.max(0, candidateSegments.length - rawSegments.length),
@@ -906,6 +919,300 @@ function resolveSupportWallSource(side) {
     return "neighborWall";
   }
   return side.wallSource ?? "none";
+}
+
+function buildBoundarySegmentsModel({
+  countedSegments,
+  excludedSegments,
+  candidateSegments,
+  unsupportedOpenSides,
+  openingSegments,
+  metersPerWorldUnit
+}) {
+  const boundarySegments = [];
+  appendBoundarySegmentSet(
+    boundarySegments,
+    candidateSegments,
+    "debug_only",
+    "candidate",
+    metersPerWorldUnit
+  );
+  appendBoundarySegmentSet(
+    boundarySegments,
+    unsupportedOpenSides,
+    "debug_only",
+    "unsupported_open_side",
+    metersPerWorldUnit
+  );
+  appendBoundarySegmentSet(
+    boundarySegments,
+    excludedSegments,
+    "excluded",
+    "excluded_room_type",
+    metersPerWorldUnit
+  );
+  appendBoundarySegmentSet(
+    boundarySegments,
+    countedSegments,
+    "interior_perimeter",
+    "counted",
+    metersPerWorldUnit
+  );
+  appendBoundarySegmentSet(
+    boundarySegments,
+    openingSegments,
+    "opening",
+    "opening",
+    metersPerWorldUnit
+  );
+  return boundarySegments;
+}
+
+function appendBoundarySegmentSet(
+  target,
+  segments,
+  kind,
+  source,
+  metersPerWorldUnit
+) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return;
+  }
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const boundary = toBoundarySegment(segment, kind, source, index, metersPerWorldUnit);
+    if (boundary) {
+      target.push(boundary);
+    }
+  }
+}
+
+function toBoundarySegment(segment, kind, source, index, metersPerWorldUnit) {
+  if (!segment || typeof segment !== "object") {
+    return null;
+  }
+  const x0 = Number.isFinite(segment.x0) ? segment.x0 : null;
+  const y0 = Number.isFinite(segment.y0) ? segment.y0 : null;
+  const x1 = Number.isFinite(segment.x1) ? segment.x1 : null;
+  const y1 = Number.isFinite(segment.y1) ? segment.y1 : null;
+  if (x0 == null || y0 == null || x1 == null || y1 == null) {
+    return null;
+  }
+
+  const normalizedAxis = normalizeAxis(segment.axis, x0, y0, x1, y1);
+  if (!normalizedAxis) {
+    return null;
+  }
+  const start = normalizedAxis === "horizontal"
+    ? Math.min(x0, x1)
+    : Math.min(y0, y1);
+  const end = normalizedAxis === "horizontal"
+    ? Math.max(x0, x1)
+    : Math.max(y0, y1);
+  const coordinate = normalizedAxis === "horizontal"
+    ? (y0 + y1) / 2
+    : (x0 + x1) / 2;
+  const lengthWorld = Number.isFinite(segment.lengthWorld)
+    ? segment.lengthWorld
+    : Math.max(0, end - start);
+  if (lengthWorld <= 0) {
+    return null;
+  }
+
+  const lengthMeters = Number.isFinite(segment.lengthMeters)
+    ? segment.lengthMeters
+    : (metersPerWorldUnit ? lengthWorld * metersPerWorldUnit : null);
+  const segmentId = typeof segment.id === "string" && segment.id ? segment.id : `${source}:${index + 1}`;
+  return {
+    id: `boundary:${kind}:${segmentId}`,
+    sourceSegmentId: segmentId,
+    kind,
+    source,
+    roomId: typeof segment.roomId === "string" && segment.roomId ? segment.roomId : null,
+    rectangleId: typeof segment.rectangleId === "string" && segment.rectangleId ? segment.rectangleId : null,
+    side: normalizeSide(segment.side),
+    axis: normalizedAxis,
+    start,
+    end,
+    coordinate,
+    lengthWorld,
+    lengthMeters,
+    x0,
+    y0,
+    x1,
+    y1,
+    wallSource: typeof segment.wallSource === "string" ? segment.wallSource : null,
+    openingId: typeof segment.openingId === "string" ? segment.openingId : null,
+    openingKind: segment.openingKind === "door" || segment.openingKind === "window" ? segment.openingKind : null
+  };
+}
+
+function normalizeAxis(axis, x0, y0, x1, y1) {
+  if (axis === "horizontal" || axis === "vertical") {
+    return axis;
+  }
+  if (Math.abs(y1 - y0) <= 1e-6) {
+    return "horizontal";
+  }
+  if (Math.abs(x1 - x0) <= 1e-6) {
+    return "vertical";
+  }
+  return null;
+}
+
+function normalizeSide(side) {
+  if (side === "top" || side === "right" || side === "bottom" || side === "left") {
+    return side;
+  }
+  return null;
+}
+
+function sumBoundaryLengthByKind(boundarySegments, kind) {
+  if (!Array.isArray(boundarySegments) || boundarySegments.length === 0) {
+    return 0;
+  }
+  let total = 0;
+  for (const segment of boundarySegments) {
+    if (segment?.kind !== kind) {
+      continue;
+    }
+    total += Number.isFinite(segment.lengthWorld) ? segment.lengthWorld : 0;
+  }
+  return total;
+}
+
+function deriveOpeningBoundarySegments(plan, metersPerWorldUnit) {
+  const openings = Array.isArray(plan?.entities?.openings) ? plan.entities.openings : [];
+  if (openings.length === 0) {
+    return [];
+  }
+  const rectangles = Array.isArray(plan?.entities?.rectangles) ? plan.entities.rectangles : [];
+  const rectangleById = new Map(
+    rectangles
+      .filter((rectangle) => typeof rectangle?.id === "string" && rectangle.id)
+      .map((rectangle) => [rectangle.id, rectangle])
+  );
+
+  const segments = [];
+  for (const opening of openings) {
+    const host = normalizeOpeningHostForBoundary(opening?.host);
+    if (!host) {
+      continue;
+    }
+    const rectangle = rectangleById.get(host.rectangleId);
+    if (!rectangle || !isOpeningHostWallCapableForBoundary(rectangle, host.side)) {
+      continue;
+    }
+    const projected = projectOpeningBoundarySegment(rectangle, host, opening, metersPerWorldUnit);
+    if (!projected) {
+      continue;
+    }
+    segments.push({
+      id: typeof opening?.id === "string" && opening.id ? opening.id : `opening:${segments.length + 1}`,
+      rectangleId: rectangle.id,
+      roomId: typeof rectangle.roomId === "string" && rectangle.roomId ? rectangle.roomId : null,
+      side: host.side,
+      axis: projected.axis,
+      wallSource: "opening",
+      openingId: typeof opening?.id === "string" ? opening.id : null,
+      openingKind: opening?.kind === "window" ? "window" : "door",
+      x0: projected.x0,
+      y0: projected.y0,
+      x1: projected.x1,
+      y1: projected.y1,
+      lengthWorld: projected.lengthWorld,
+      lengthMeters: metersPerWorldUnit ? projected.lengthWorld * metersPerWorldUnit : null
+    });
+  }
+  return segments;
+}
+
+function normalizeOpeningHostForBoundary(host) {
+  if (!host || typeof host !== "object" || host.type !== "wallSide") {
+    return null;
+  }
+  const rectangleId = typeof host.rectangleId === "string" && host.rectangleId ? host.rectangleId : null;
+  const side = normalizeSide(host.side ?? host.edge);
+  const offset = clamp(Number.isFinite(host.offset) ? host.offset : 0.5, 0, 1);
+  if (!rectangleId || !side) {
+    return null;
+  }
+  return {
+    rectangleId,
+    side,
+    offset
+  };
+}
+
+function isOpeningHostWallCapableForBoundary(rectangle, side) {
+  if (!rectangle || !normalizeSide(side)) {
+    return false;
+  }
+  if (rectangle.kind === "wallRect") {
+    return true;
+  }
+  return readWallCmSide(rectangle.wallCm, side) > 0;
+}
+
+function readWallCmSide(wallCm, side) {
+  const source = wallCm && typeof wallCm === "object" ? wallCm : {};
+  const value = Number.isFinite(source[side]) ? source[side] : 0;
+  return value > 0 ? value : 0;
+}
+
+function projectOpeningBoundarySegment(rectangle, host, opening, metersPerWorldUnit) {
+  if (
+    !rectangle ||
+    !Number.isFinite(rectangle.x) ||
+    !Number.isFinite(rectangle.y) ||
+    !Number.isFinite(rectangle.w) ||
+    !Number.isFinite(rectangle.h) ||
+    rectangle.w <= 0 ||
+    rectangle.h <= 0
+  ) {
+    return null;
+  }
+  const sideLength = host.side === "top" || host.side === "bottom"
+    ? rectangle.w
+    : rectangle.h;
+  if (!Number.isFinite(sideLength) || sideLength <= 0) {
+    return null;
+  }
+  const minWidthWorld = Math.max(1, Math.min(40, sideLength));
+  const requestedWidth = Number.isFinite(opening?.widthWorld) ? opening.widthWorld : 90;
+  const widthWorld = clamp(requestedWidth, minWidthWorld, sideLength);
+  const halfWidth = widthWorld / 2;
+  const centerAlong = clamp(host.offset * sideLength, halfWidth, sideLength - halfWidth);
+  const startAlong = centerAlong - halfWidth;
+  const endAlong = centerAlong + halfWidth;
+  const lengthWorld = Math.max(0, endAlong - startAlong);
+  if (lengthWorld <= 0) {
+    return null;
+  }
+
+  if (host.side === "top" || host.side === "bottom") {
+    const y = host.side === "top" ? rectangle.y : rectangle.y + rectangle.h;
+    return {
+      axis: "horizontal",
+      x0: rectangle.x + startAlong,
+      y0: y,
+      x1: rectangle.x + endAlong,
+      y1: y,
+      lengthWorld,
+      lengthMeters: metersPerWorldUnit ? lengthWorld * metersPerWorldUnit : null
+    };
+  }
+
+  const x = host.side === "left" ? rectangle.x : rectangle.x + rectangle.w;
+  return {
+    axis: "vertical",
+    x0: x,
+    y0: rectangle.y + startAlong,
+    x1: x,
+    y1: rectangle.y + endAlong,
+    lengthWorld,
+    lengthMeters: metersPerWorldUnit ? lengthWorld * metersPerWorldUnit : null
+  };
 }
 
 function sumSegmentLength(segments) {

@@ -425,3 +425,63 @@ test("baseboard exclusions are deterministic for multi-rectangle excluded room",
   assertClose(second.rawTotalLengthWorld, first.rawTotalLengthWorld);
   assertClose(second.excludedLengthWorld, first.excludedLengthWorld);
 });
+
+test("boundary segment model includes interior/excluded/opening/debug kinds", () => {
+  const plan = createPlan(
+    [
+      {
+        id: "rect_generic",
+        kind: "roomRect",
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 80,
+        wallCm: { top: 10, right: 0, bottom: 0, left: 0 },
+        roomId: "room_generic"
+      },
+      {
+        id: "rect_bath",
+        kind: "roomRect",
+        x: 120,
+        y: 0,
+        w: 100,
+        h: 80,
+        wallCm: { top: 10, right: 0, bottom: 0, left: 0 },
+        roomId: "room_bath"
+      }
+    ],
+    0.01,
+    [
+      { id: "room_generic", name: "Room A", roomType: "generic", rectangleIds: ["rect_generic"] },
+      { id: "room_bath", name: "Bath", roomType: "bathroom", rectangleIds: ["rect_bath"] }
+    ]
+  );
+  plan.entities.openings = [
+    {
+      id: "op_1",
+      kind: "door",
+      host: {
+        type: "wallSide",
+        rectangleId: "rect_generic",
+        side: "top",
+        offset: 0.5
+      },
+      widthWorld: 30,
+      x: 50,
+      y: 0
+    }
+  ];
+
+  const result = deriveBaseboardCandidates(plan);
+  const kinds = new Set((result.boundarySegments ?? []).map((segment) => segment.kind));
+
+  assert(kinds.has("interior_perimeter"), "Expected interior_perimeter boundary segments.");
+  assert(kinds.has("excluded"), "Expected excluded boundary segments.");
+  assert(kinds.has("opening"), "Expected opening boundary segments.");
+  assert(kinds.has("debug_only"), "Expected debug_only boundary segments.");
+
+  const interiorLength = result.boundarySegments
+    .filter((segment) => segment.kind === "interior_perimeter")
+    .reduce((sum, segment) => sum + (segment.lengthWorld ?? 0), 0);
+  assertClose(interiorLength, result.totalLengthWorld);
+});
