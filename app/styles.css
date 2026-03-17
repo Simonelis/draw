@@ -354,15 +354,51 @@ body {
 .toolbar {
   border-bottom: 1px solid var(--line);
   padding: 10px;
-  display: flex;
+  display: grid;
+  grid-template-rows: auto auto auto;
   gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  font-size: 0.9rem;
-  max-height: 168px;
+  align-items: start;
+  font-size: 0.82rem;
+  max-height: 210px;
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+.toolbar-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolbar-tab {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.toolbar-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent-soft) 70%, white);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
+.toolbar-panels {
+  min-width: 0;
+}
+
+.toolbar-tab-panel {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.toolbar-tab-panel.is-active {
+  display: flex;
 }
 
 .toolbar-label {
@@ -517,7 +553,8 @@ body {
 }
 
 .toolbar .status {
-  margin-left: auto;
+  margin-left: 0;
+  width: 100%;
   color: var(--muted);
   font-size: 0.86rem;
 }
